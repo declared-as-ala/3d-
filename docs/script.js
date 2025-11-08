@@ -98,6 +98,18 @@ function animate() {
         if (!isTrackingEnabled && currentVrm.scene) {
             // Rotate continuously when tracking is disabled
             currentVrm.scene.rotation.y += idleRotationSpeed * delta;
+            
+            // Animate interactive cubes
+            interactiveCubes.forEach(cube => {
+                if (!cube.userData.isDragging) {
+                    cube.rotation.x += cube.userData.rotationSpeed.x;
+                    cube.rotation.y += cube.userData.rotationSpeed.y;
+                    cube.rotation.z += cube.userData.rotationSpeed.z;
+                    
+                    // Float animation
+                    cube.position.y = cube.userData.originalPosition.y + Math.sin(Date.now() * 0.001 + cube.userData.originalPosition.x) * 0.2;
+                }
+            });
         } else if (isTrackingEnabled && !isTrackingActive && currentVrm.scene) {
             // Rotate when tracking is enabled but no tracking detected (waiting)
             currentVrm.scene.rotation.y += idleRotationSpeed * delta;
@@ -634,21 +646,24 @@ function startTracking() {
     // Start camera if not already started
     if (!camera) {
         camera = new Camera(videoElement, {
-    onFrame: async () => {
+            onFrame: async () => {
                 if (isTrackingEnabled) {
-        await holistic.send({ image: videoElement });
+                    await holistic.send({ image: videoElement });
                 }
-    },
-    width: 640,
-    height: 480,
-});
-camera.start();
+            },
+            width: 640,
+            height: 480,
+        });
+        camera.start();
     }
     
     // Stop idle animation
     if (currentVrm && currentVrm.scene) {
         currentVrm.scene.rotation.y = Math.PI; // Reset to face camera
     }
+    
+    // Remove interactive cubes when tracking starts
+    removeInteractiveCubes();
     
     // Update button
     const toggleButton = document.getElementById("tracking-toggle");
@@ -673,8 +688,10 @@ function stopTracking() {
         camera = null;
     }
     
-    // Start idle animation (rotation)
-    // Animation will be handled in the animate loop
+    // Start idle animation (rotation) and create interactive cubes
+    if (currentVrm) {
+        createInteractiveCubes();
+    }
     
     // Update button
     const toggleButton = document.getElementById("tracking-toggle");
@@ -683,7 +700,7 @@ function stopTracking() {
         toggleButton.style.background = "#13a3f3";
     }
     
-    console.log("Tracking stopped");
+    console.log("Tracking stopped - Interactive mode activated");
 }
 
 // Setup tracking toggle button (wait for DOM to be ready)
