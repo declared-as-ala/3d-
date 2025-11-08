@@ -1,8 +1,46 @@
-import * as Kalidokit from "../dist";
+// Import Kalidokit - use UMD build from CDN (works everywhere) or local dist
+// Wait for DOM and Kalidokit to be ready
+let Kalidokit;
+
+function getKalidokit() {
+    // First try: UMD build from CDN (loaded in HTML before this script)
+    if (typeof window !== 'undefined' && window.Kalidokit) {
+        return window.Kalidokit;
+    }
+    return null;
+}
+
+// Try to get from global first (CDN)
+Kalidokit = getKalidokit();
+
+// If not available from CDN, try ES module import
+if (!Kalidokit) {
+    try {
+        // Try local dist (for local dev)
+        const module = await import("../dist/index.js");
+        Kalidokit = module;
+    } catch (e) {
+        try {
+            // Try docs/dist (for Vercel after copy:dist)
+            const module = await import("./dist/index.js");
+            Kalidokit = module;
+        } catch (e2) {
+            console.error("Failed to load Kalidokit. Make sure CDN is loaded or dist is built.", e, e2);
+            // Fallback to prevent crashes
+            Kalidokit = {
+                Utils: { remap: (x) => x, clamp: (x, min, max) => Math.max(min, Math.min(max, x)) },
+                Vector: { lerp: (a, b, t) => a + (b - a) * t },
+                Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
+                Pose: { solve: () => ({}) },
+                Hand: { solve: () => ({}) }
+            };
+        }
+    }
+}
+
 //Import Helper Functions from Kalidokit
 const remap = Kalidokit.Utils.remap;
 const clamp = Kalidokit.Utils.clamp;
-
 const lerp = Kalidokit.Vector.lerp;
 
 /* THREEJS WORLD SETUP */
