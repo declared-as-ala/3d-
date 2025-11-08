@@ -86,12 +86,29 @@ function animate() {
     const delta = clock.getDelta();
 
     if (currentVrm) {
+        // Safety check: ensure avatar is still in scene
+        if (!scene.children.includes(currentVrm.scene)) {
+            console.warn("Avatar was removed from scene! Re-adding...");
+            scene.add(currentVrm.scene);
+        }
+        
         // Update model to render physics
         currentVrm.update(delta);
         
         // Update animation mixer if active (for Mixamo animations)
         if (animationMixer) {
-            animationMixer.update(delta);
+            try {
+                animationMixer.update(delta);
+            } catch (error) {
+                console.error("Error updating animation mixer:", error);
+                // Stop animations if they cause errors
+                animationActions.forEach(action => {
+                    if (action && action.isPlaying()) {
+                        action.stop();
+                    }
+                });
+                animationActions = [];
+            }
         }
         
         // Update idle animation mixer if active (legacy)
@@ -319,8 +336,8 @@ function loadIdleAnimation(vrm) {
     // Local files: Use relative paths from docs/ folder (e.g., "animations/run.fbx")
     // URLs: Use full URLs (e.g., "https://cdn.jsdelivr.net/gh/...")
     const animationFiles = [
-        // Local FBX file
-        "animations/run.fbx",
+        // Local FBX file - Temporarily disabled to prevent avatar disappearing
+        // "animations/run.fbx",
         
         // You can also add URLs here:
         // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/idle.glb",
@@ -385,25 +402,34 @@ function loadIdleAnimation(vrm) {
                         // Try to retarget animations to VRM skeleton
                         clips.forEach(clip => {
                             try {
-                                // Retarget animation to VRM skeleton
-                                const retargetedClip = THREE.VRMUtils.retargetAnimation ? 
-                                    THREE.VRMUtils.retargetAnimation(clip, vrm) : clip;
-                                
-                                if (retargetedClip) {
-                                    animationClips.push(retargetedClip);
-                                    animationNames.push(clip.name || `Animation_${index + 1}`);
-                                    console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
-                                } else {
-                                    // Fallback: use original clip
+                                // For FBX files, skip retargeting as it often causes issues
+                                if (isFBX) {
+                                    // FBX animations often don't work well with VRM retargeting
+                                    // Use original clip without retargeting
+                                    console.warn(`FBX animation detected. Skipping retargeting for ${clip.name || `Animation_${index + 1}`}`);
                                     animationClips.push(clip);
                                     animationNames.push(clip.name || `Animation_${index + 1}`);
-                                    console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
+                                    console.log(`✓ Loaded FBX animation (no retargeting): ${clip.name || `Animation_${index + 1}`}`);
+                                } else {
+                                    // For GLB/GLTF, try retargeting
+                                    const retargetedClip = THREE.VRMUtils.retargetAnimation ? 
+                                        THREE.VRMUtils.retargetAnimation(clip, vrm) : clip;
+                                    
+                                    if (retargetedClip) {
+                                        animationClips.push(retargetedClip);
+                                        animationNames.push(clip.name || `Animation_${index + 1}`);
+                                        console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`} (GLB)`);
+                                    } else {
+                                        // Fallback: use original clip
+                                        animationClips.push(clip);
+                                        animationNames.push(clip.name || `Animation_${index + 1}`);
+                                        console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`} (GLB)`);
+                                    }
                                 }
                             } catch (error) {
                                 // If retargeting fails, use original clip
-                                console.warn(`Retargeting failed for ${clip.name}, using original:`, error);
-                                animationClips.push(clip);
-                                animationNames.push(clip.name || `Animation_${index + 1}`);
+                                console.warn(`Error processing animation ${clip.name}, skipping:`, error);
+                                // Don't add the clip if it causes errors
                             }
                         });
                     } else {
@@ -478,8 +504,19 @@ function startIdleRotation() {
 
 // Function to play Mixamo animation
 function playMixamoAnimation(index) {
-    if (!currentVrm || !animationMixer) {
-        console.warn("Cannot play animation: VRM or mixer not initialized");
+    // Safety check: ensure avatar is still in scene
+    if (!currentVrm || !currentVrm.scene || !scene.children.includes(currentVrm.scene)) {
+        console.warn("Cannot play animation: VRM not in scene");
+        // Try to re-add avatar to scene if it was removed
+        if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+            console.log("Re-adding avatar to scene...");
+            scene.add(currentVrm.scene);
+        }
+        return;
+    }
+    
+    if (!animationMixer) {
+        console.warn("Cannot play animation: mixer not initialized");
         return;
     }
     
@@ -488,27 +525,37 @@ function playMixamoAnimation(index) {
         return;
     }
     
-    // Stop current animation
-    animationActions.forEach(action => {
-        if (action.isPlaying()) {
-            action.fadeOut(0.5);
-            action.stop();
+    try {
+        // Stop current animation
+        animationActions.forEach(action => {
+            if (action && action.isPlaying()) {
+                action.fadeOut(0.5);
+                action.stop();
+            }
+        });
+        animationActions = []; // Clear array
+        
+        // Play new animation
+        const clip = animationClips[index];
+        if (clip && animationMixer) {
+            const action = animationMixer.clipAction(clip);
+            if (action) {
+                action.reset().fadeIn(0.5).play();
+                animationActions.push(action);
+                currentAnimationIndex = index;
+                
+                console.log(`Playing animation ${index + 1}/${animationClips.length}: ${animationNames[index] || 'Unnamed'}`);
+                
+                // Set animation to loop
+                action.setLoop(THREE.LoopRepeat);
+            }
         }
-    });
-    animationActions = []; // Clear array
-    
-    // Play new animation
-    const clip = animationClips[index];
-    if (clip && animationMixer) {
-        const action = animationMixer.clipAction(clip);
-        action.reset().fadeIn(0.5).play();
-        animationActions.push(action);
-        currentAnimationIndex = index;
-        
-        console.log(`Playing animation ${index + 1}/${animationClips.length}: ${animationNames[index] || 'Unnamed'}`);
-        
-        // Set animation to loop
-        action.setLoop(THREE.LoopRepeat);
+    } catch (error) {
+        console.error("Error playing animation:", error);
+        // Ensure avatar stays in scene
+        if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+            scene.add(currentVrm.scene);
+        }
     }
 }
 
