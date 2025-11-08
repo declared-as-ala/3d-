@@ -333,15 +333,21 @@ function loadIdleAnimation(vrm) {
     }
     
     // Mixamo animation files - Support both local files and URLs
-    // Local files: Use relative paths from docs/ folder (e.g., "animations/run.fbx")
+    // IMPORTANT: Use GLB format (not FBX) for better VRM compatibility!
+    // Download from Mixamo.com: Choose "glTF" format when downloading
+    // Local files: Use relative paths from docs/ folder (e.g., "animations/idle.glb")
     // URLs: Use full URLs (e.g., "https://cdn.jsdelivr.net/gh/...")
     const animationFiles = [
-        // Local FBX file - Temporarily disabled to prevent avatar disappearing
-        // "animations/run.fbx",
+        // Add your Mixamo GLB animations here (download from Mixamo.com as "glTF" format)
+        // Example local files:
+        // "animations/idle.glb",
+        // "animations/walking.glb",
+        // "animations/dancing.glb",
         
-        // You can also add URLs here:
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/idle.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/wave.glb",
+        // Example URLs (after uploading to GitHub):
+        // "https://cdn.jsdelivr.net/gh/declared-as-ala/3d-@main/animations/idle.glb",
+        // "https://cdn.jsdelivr.net/gh/declared-as-ala/3d-@main/animations/walking.glb",
+        // "https://cdn.jsdelivr.net/gh/declared-as-ala/3d-@main/animations/dancing.glb",
     ];
     
     // If no animations provided, use simple rotation
@@ -358,19 +364,14 @@ function loadIdleAnimation(vrm) {
     totalAnimationsToLoad = animationFiles.length;
     animationLoadCount = 0;
     
-    // Check if FBXLoader is available
-    if (typeof THREE.FBXLoader === 'undefined') {
-        console.error("FBXLoader is not loaded! Make sure FBXLoader.js is included in index.html");
-        // Fallback: use simple rotation
-        if (!isTrackingEnabled) {
-            startIdleRotation();
-            createInteractiveCubes();
-        }
-        return;
-    }
-    
+    // GLTFLoader is always available (loaded in index.html)
     const gltfLoader = new THREE.GLTFLoader();
-    const fbxLoader = new THREE.FBXLoader();
+    
+    // FBXLoader is optional (only needed if using FBX files)
+    let fbxLoader = null;
+    if (typeof THREE.FBXLoader !== 'undefined') {
+        fbxLoader = new THREE.FBXLoader();
+    }
     
     animationFiles.forEach((filePath, index) => {
         console.log(`Loading animation ${index + 1}/${totalAnimationsToLoad}: ${filePath}`);
@@ -378,6 +379,17 @@ function loadIdleAnimation(vrm) {
         // Determine file type and use appropriate loader
         const isFBX = filePath.toLowerCase().endsWith('.fbx');
         const isGLB = filePath.toLowerCase().endsWith('.glb') || filePath.toLowerCase().endsWith('.gltf');
+        
+        // Prefer GLB format for VRM compatibility
+        if (isFBX && !fbxLoader) {
+            console.warn(`FBX file detected but FBXLoader not available. Skipping: ${filePath}`);
+            animationLoadCount++;
+            if (animationLoadCount === totalAnimationsToLoad) {
+                checkAndStartAnimations();
+            }
+            return;
+        }
+        
         const loader = isFBX ? fbxLoader : gltfLoader;
         
         loader.load(
@@ -440,31 +452,7 @@ function loadIdleAnimation(vrm) {
                 }
                 
                 animationLoadCount++;
-                
-                // If all animations are loaded and tracking is disabled, play first animation
-                if (animationLoadCount === totalAnimationsToLoad) {
-                    console.log(`All animations loaded! Total: ${animationClips.length}`);
-                    if (!isTrackingEnabled && animationClips.length > 0) {
-                        // Use setTimeout to ensure everything is ready
-                        setTimeout(() => {
-                            try {
-                                playMixamoAnimation(0);
-                                console.log(`Playing first animation: ${animationNames[0]}`);
-                            } catch (error) {
-                                console.error("Error playing animation:", error);
-                                // Fallback to simple rotation
-                                startIdleRotation();
-                                createInteractiveCubes();
-                            }
-                        }, 100);
-                    } else if (animationClips.length === 0) {
-                        // No animations loaded, use simple rotation
-                        if (!isTrackingEnabled) {
-                            startIdleRotation();
-                            createInteractiveCubes();
-                        }
-                    }
-                }
+                checkAndStartAnimations();
             },
             (progress) => {
                 if (progress.total > 0) {
@@ -477,23 +465,39 @@ function loadIdleAnimation(vrm) {
                 animationLoadCount++;
                 
                 // Continue even if some animations fail
-                if (animationLoadCount === totalAnimationsToLoad) {
-                    if (animationClips.length > 0) {
-                        console.log(`Some animations failed to load, but ${animationClips.length} loaded successfully.`);
-                        if (!isTrackingEnabled) {
-                            playMixamoAnimation(0);
-                        }
-                    } else {
-                        console.log("No animations loaded. Using simple rotation.");
-                        if (!isTrackingEnabled) {
-                            startIdleRotation();
-                            createInteractiveCubes();
-                        }
-                    }
-                }
+                animationLoadCount++;
+                checkAndStartAnimations();
             }
         );
     });
+    
+    // Helper function to check if all animations are loaded and start playing
+    function checkAndStartAnimations() {
+        if (animationLoadCount === totalAnimationsToLoad) {
+            console.log(`All animations loaded! Total: ${animationClips.length}`);
+            if (!isTrackingEnabled && animationClips.length > 0) {
+                // Use setTimeout to ensure everything is ready
+                setTimeout(() => {
+                    try {
+                        playMixamoAnimation(0);
+                        console.log(`Playing first animation: ${animationNames[0]}`);
+                    } catch (error) {
+                        console.error("Error playing animation:", error);
+                        // Fallback to simple rotation
+                        startIdleRotation();
+                        createInteractiveCubes();
+                    }
+                }, 100);
+            } else if (animationClips.length === 0) {
+                // No animations loaded, use simple rotation
+                console.log("No animations loaded. Using simple rotation.");
+                if (!isTrackingEnabled) {
+                    startIdleRotation();
+                    createInteractiveCubes();
+                }
+            }
+        }
+    }
 }
 
 // Simple idle rotation animation when tracking is off
