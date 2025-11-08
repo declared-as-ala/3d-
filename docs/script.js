@@ -102,15 +102,52 @@ function animate() {
         // Update animation mixer if active (for Mixamo animations)
         if (animationMixer) {
             try {
+                // Check avatar before update
+                const wasInScene = currentVrm && currentVrm.scene && scene.children.includes(currentVrm.scene);
+                
                 animationMixer.update(delta);
                 
-                // Double-check avatar is still in scene after animation update
-                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
-                    console.warn("Avatar removed during animation update! Re-adding...");
-                    scene.add(currentVrm.scene);
-                    currentVrm.scene.position.set(0, 0.5, 0);
-                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
-                    currentVrm.scene.rotation.y = Math.PI;
+                // CRITICAL: Check if avatar was removed during animation update
+                if (currentVrm && currentVrm.scene) {
+                    const isInScene = scene.children.includes(currentVrm.scene);
+                    if (wasInScene && !isInScene) {
+                        console.error("❌ Avatar was removed during animation update! This indicates incompatible animation.");
+                        console.warn("Stopping animation to prevent further issues");
+                        
+                        // Stop all animations immediately
+                        animationActions.forEach(action => {
+                            if (action && action.isPlaying()) {
+                                action.stop();
+                                action.reset();
+                            }
+                        });
+                        animationActions = [];
+                        animationClips = [];
+                        animationNames = [];
+                        
+                        // Re-add avatar
+                        scene.add(currentVrm.scene);
+                        currentVrm.scene.position.set(0, 0.5, 0);
+                        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                        currentVrm.scene.rotation.y = Math.PI;
+                        
+                        // Reset button
+                        const loadButton = document.getElementById("load-dancing");
+                        if (loadButton) {
+                            loadButton.textContent = "Load Dancing Animation";
+                            loadButton.disabled = false;
+                            loadButton.style.background = "";
+                        }
+                        
+                        console.warn("⚠️ DAE animation stopped - format may be incompatible with VRM. Try GLB format instead.");
+                    } else if (!isInScene) {
+                        // Avatar not in scene - re-add it
+                        console.warn("Avatar not in scene during animation update! Re-adding...");
+                        scene.add(currentVrm.scene);
+                        currentVrm.scene.position.set(0, 0.5, 0);
+                        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                        currentVrm.scene.rotation.y = Math.PI;
+                    }
                 }
             } catch (error) {
                 console.error("Error updating animation mixer:", error);
@@ -118,6 +155,7 @@ function animate() {
                 animationActions.forEach(action => {
                     if (action && action.isPlaying()) {
                         action.stop();
+                        action.reset();
                     }
                 });
                 animationActions = [];
@@ -361,8 +399,8 @@ function loadIdleAnimation(vrm) {
     // URLs: Use full URLs (e.g., "https://cdn.jsdelivr.net/gh/...")
     const animationFiles = [
         // Add your animations here (supports GLB, FBX, and DAE formats)
-        // Example local files:
-        "animations/Dancing.dae",  // COLLADA format animation
+        // NOTE: Dancing.dae is loaded manually via button - not auto-loaded to prevent avatar disappearing
+        // "animations/Dancing.dae",  // Load manually via "Load Dancing Animation" button
         
         // More examples:
         // "animations/idle.glb",
@@ -631,16 +669,93 @@ function playMixamoAnimation(index) {
         // Play new animation
         const clip = animationClips[index];
         if (clip && animationMixer) {
-            const action = animationMixer.clipAction(clip);
-            if (action) {
-                action.reset().fadeIn(0.5).play();
-                animationActions.push(action);
-                currentAnimationIndex = index;
+            // CRITICAL: Double-check avatar is in scene before creating action
+            if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                console.warn("Re-adding avatar before creating animation action");
+                scene.add(currentVrm.scene);
+                currentVrm.scene.position.set(0, 0.5, 0);
+                currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                currentVrm.scene.rotation.y = Math.PI;
+            }
+            
+            try {
+                // For DAE animations, we need to be extra careful - they often don't work with VRM
+                // Check if this is a DAE animation by checking the clip tracks
+                const isDAEAnimation = clip.tracks && clip.tracks.some(track => {
+                    // DAE animations often have bone names that don't match VRM
+                    const trackName = track.name || '';
+                    // VRM bones typically have specific naming patterns
+                    return !trackName.includes('mixamorig') && !trackName.includes('Hips') && 
+                           !trackName.includes('Spine') && !trackName.includes('Head');
+                });
                 
-                console.log(`Playing animation ${index + 1}/${animationClips.length}: ${animationNames[index] || 'Unnamed'}`);
+                if (isDAEAnimation) {
+                    console.warn("⚠️ DAE animation detected - may not work correctly with VRM skeleton");
+                    console.warn("If avatar disappears, the animation is incompatible with VRM");
+                }
                 
-                // Set animation to loop
-                action.setLoop(THREE.LoopRepeat);
+                const action = animationMixer.clipAction(clip);
+                if (action) {
+                    // CRITICAL: Ensure avatar is in scene before playing
+                    if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                        console.warn("Re-adding avatar before playing animation action");
+                        scene.add(currentVrm.scene);
+                        currentVrm.scene.position.set(0, 0.5, 0);
+                        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                        currentVrm.scene.rotation.y = Math.PI;
+                    }
+                    
+                    action.reset().fadeIn(0.5).play();
+                    animationActions.push(action);
+                    currentAnimationIndex = index;
+                    
+                    console.log(`Playing animation ${index + 1}/${animationClips.length}: ${animationNames[index] || 'Unnamed'}`);
+                    
+                    // Set animation to loop
+                    action.setLoop(THREE.LoopRepeat);
+                    
+                    // CRITICAL: Immediate check after playing
+                    setTimeout(() => {
+                        if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                            console.error("❌ Avatar was removed after starting animation! Re-adding immediately!");
+                            scene.add(currentVrm.scene);
+                            currentVrm.scene.position.set(0, 0.5, 0);
+                            currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                            currentVrm.scene.rotation.y = Math.PI;
+                            
+                            // Stop the problematic animation
+                            if (action && action.isPlaying()) {
+                                action.stop();
+                                action.reset();
+                            }
+                            animationActions = animationActions.filter(a => a !== action);
+                            
+                            console.warn("Animation stopped due to avatar removal. DAE animation may be incompatible with VRM.");
+                            alert("⚠️ Animation stopped - DAE format may not be compatible with VRM. Try converting to GLB format.");
+                        }
+                    }, 50);
+                    
+                    // CRITICAL: Final check - ensure avatar is still in scene after starting animation
+                    if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                        console.error("Avatar was removed after starting animation! Re-adding immediately!");
+                        scene.add(currentVrm.scene);
+                        currentVrm.scene.position.set(0, 0.5, 0);
+                        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                        currentVrm.scene.rotation.y = Math.PI;
+                    }
+                } else {
+                    console.error("Failed to create animation action");
+                }
+            } catch (actionError) {
+                console.error("Error creating animation action:", actionError);
+                // Ensure avatar stays in scene even if action creation fails
+                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                    scene.add(currentVrm.scene);
+                    currentVrm.scene.position.set(0, 0.5, 0);
+                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                    currentVrm.scene.rotation.y = Math.PI;
+                }
+                throw actionError;
             }
         }
     } catch (error) {
@@ -1572,4 +1687,211 @@ function setupTrackingButton() {
             }
         });
     }
+    
+    // Setup button to load Dancing animation manually
+    const loadDancingButton = document.getElementById("load-dancing");
+    if (loadDancingButton) {
+        loadDancingButton.addEventListener("click", () => {
+            loadDancingAnimation();
+        });
+    }
+}
+
+// Function to load Dancing.dae animation manually
+function loadDancingAnimation() {
+    if (!currentVrm || !currentVrm.scene) {
+        alert("Please load a VRM model first!");
+        return;
+    }
+    
+    // Ensure avatar is in scene before loading animation
+    if (!scene.children.includes(currentVrm.scene)) {
+        console.warn("Avatar not in scene! Re-adding before loading animation...");
+        scene.add(currentVrm.scene);
+        currentVrm.scene.position.set(0, 0.5, 0);
+        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+        currentVrm.scene.rotation.y = Math.PI;
+    }
+    
+    // Initialize animation mixer if not already done
+    if (!animationMixer && currentVrm && currentVrm.scene) {
+        animationMixer = new THREE.AnimationMixer(currentVrm.scene);
+        console.log("Animation mixer initialized for Dancing animation");
+    }
+    
+    // Check if ColladaLoader is available
+    if (typeof THREE.ColladaLoader === 'undefined') {
+        alert("ColladaLoader is not loaded! Please refresh the page.");
+        return;
+    }
+    
+    const colladaLoader = new THREE.ColladaLoader();
+    const dancingPath = "animations/Dancing.dae";
+    
+    console.log("Loading Dancing.dae animation...");
+    
+    const loadButton = document.getElementById("load-dancing");
+    if (loadButton) {
+        loadButton.textContent = "Loading...";
+        loadButton.disabled = true;
+    }
+    
+    colladaLoader.load(
+        dancingPath,
+        (loaded) => {
+            try {
+                // CRITICAL: Ensure avatar stays in scene
+                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                    console.warn("Re-adding avatar during animation load");
+                    scene.add(currentVrm.scene);
+                    currentVrm.scene.position.set(0, 0.5, 0);
+                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                    currentVrm.scene.rotation.y = Math.PI;
+                }
+                
+                // IMPORTANT: Don't add the DAE model to the scene - we only want animations!
+                // The loaded.scene contains a full 3D model that would interfere with the VRM avatar
+                // We extract only the animation clips and discard the model
+                
+                let clips = [];
+                
+                // Extract animations from DAE file (new API: scene.animations)
+                if (loaded.scene && loaded.scene.animations && loaded.scene.animations.length > 0) {
+                    clips = loaded.scene.animations;
+                    console.log(`Found ${clips.length} animation(s) in DAE scene.animations`);
+                } else if (loaded.animations && loaded.animations.length > 0) {
+                    clips = loaded.animations;
+                    console.log(`Found ${clips.length} animation(s) in DAE animations (deprecated API)`);
+                } else {
+                    console.warn("No animations found in Dancing.dae");
+                    alert("No animations found in Dancing.dae file!");
+                    if (loadButton) {
+                        loadButton.textContent = "Load Dancing Animation";
+                        loadButton.disabled = false;
+                    }
+                    return;
+                }
+                
+                if (clips.length > 0) {
+                    // Clear existing animations
+                    animationActions.forEach(action => {
+                        if (action && action.isPlaying()) {
+                            action.stop();
+                            action.reset();
+                        }
+                    });
+                    animationActions = [];
+                    animationClips = [];
+                    animationNames = [];
+                    
+                    // Add the dancing animation
+                    clips.forEach(clip => {
+                        if (clip.tracks && clip.tracks.length > 0) {
+                            animationClips.push(clip);
+                            animationNames.push(clip.name || "Dancing");
+                            console.log(`✓ Loaded Dancing animation: ${clip.name || "Dancing"}`);
+                        } else {
+                            console.warn("Dancing animation clip has no tracks - skipping");
+                        }
+                    });
+                    
+                    if (animationClips.length > 0) {
+                        // Stop tracking if active (to play animation)
+                        if (isTrackingEnabled) {
+                            stopTracking();
+                        }
+                        
+                        // Play the dancing animation with extra safety checks
+                        setTimeout(() => {
+                            try {
+                                // Final check before playing
+                                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                                    console.warn("Re-adding avatar before playing dancing animation");
+                                    scene.add(currentVrm.scene);
+                                    currentVrm.scene.position.set(0, 0.5, 0);
+                                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                                    currentVrm.scene.rotation.y = Math.PI;
+                                }
+                                
+                                playMixamoAnimation(0);
+                                console.log("Dancing animation started!");
+                                
+                                // Monitor avatar visibility after animation starts
+                                setTimeout(() => {
+                                    if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                                        console.error("❌ Avatar disappeared after dancing animation started!");
+                                        console.warn("DAE animation is likely incompatible with VRM skeleton");
+                                        
+                                        // Stop the animation
+                                        animationActions.forEach(action => {
+                                            if (action && action.isPlaying()) {
+                                                action.stop();
+                                                action.reset();
+                                            }
+                                        });
+                                        animationActions = [];
+                                        
+                                        // Re-add avatar
+                                        scene.add(currentVrm.scene);
+                                        currentVrm.scene.position.set(0, 0.5, 0);
+                                        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                                        currentVrm.scene.rotation.y = Math.PI;
+                                        
+                                        if (loadButton) {
+                                            loadButton.textContent = "Load Dancing Animation";
+                                            loadButton.disabled = false;
+                                            loadButton.style.background = "";
+                                        }
+                                        
+                                        alert("⚠️ Dancing animation stopped - DAE format is not compatible with VRM.\n\nPlease convert Dancing.dae to GLB format for better compatibility.");
+                                    } else {
+                                        console.log("✓ Avatar still visible - animation is working!");
+                                        if (loadButton) {
+                                            loadButton.textContent = "Dancing!";
+                                            loadButton.style.background = "#27ae60";
+                                        }
+                                    }
+                                }, 200);
+                                
+                            } catch (error) {
+                                console.error("Error playing dancing animation:", error);
+                                alert("Error playing animation. Check console for details.");
+                                if (loadButton) {
+                                    loadButton.textContent = "Load Dancing Animation";
+                                    loadButton.disabled = false;
+                                }
+                            }
+                        }, 100);
+                    } else {
+                        alert("Failed to load dancing animation - no valid clips found");
+                        if (loadButton) {
+                            loadButton.textContent = "Load Dancing Animation";
+                            loadButton.disabled = false;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing Dancing.dae:", error);
+                alert("Error loading animation: " + error.message);
+                if (loadButton) {
+                    loadButton.textContent = "Load Dancing Animation";
+                    loadButton.disabled = false;
+                }
+            }
+        },
+        (progress) => {
+            if (progress.total > 0) {
+                const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                console.log(`Loading Dancing.dae... ${percent}%`);
+            }
+        },
+        (error) => {
+            console.error("Error loading Dancing.dae:", error);
+            alert("Failed to load Dancing.dae: " + error.message);
+            if (loadButton) {
+                loadButton.textContent = "Load Dancing Animation";
+                loadButton.disabled = false;
+            }
+        }
+    );
 }
