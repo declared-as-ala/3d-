@@ -616,7 +616,7 @@ const animateVRM = (vrm, results) => {
         return;
     }
     // Take the results from `Holistic` and animate character based on its Face, Pose, and Hand Keypoints.
-    let riggedPose, riggedLeftHand, riggedRightHand, riggedFace;
+    let riggedPose, riggedFace;
 
     const faceLandmarks = results.faceLandmarks;
     // Pose 3D Landmarks are with respect to Hip distance in meters
