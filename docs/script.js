@@ -1803,8 +1803,117 @@ function setupTrackingButton() {
     }
 }
 
-// Function to load Dancing.dae animation manually
-function loadDancingAnimation() {
+// Function to load run.fbx animation on Remy
+function loadRunAnimation() {
+    if (!currentFBXModel || !isFBXModel) {
+        alert("Please wait for Remy.fbx to load! (It loads automatically when tracking is disabled)");
+        return;
+    }
+    
+    if (typeof THREE.FBXLoader === 'undefined') {
+        alert("FBXLoader is not loaded! Please refresh the page.");
+        return;
+    }
+    
+    const fbxLoader = new THREE.FBXLoader();
+    const runAnimationPath = "animations/run.fbx";
+    
+    const startButton = document.getElementById("start-animation");
+    if (startButton) {
+        startButton.textContent = "Loading Animation...";
+        startButton.disabled = true;
+    }
+    
+    console.log("Loading run.fbx animation...");
+    
+    fbxLoader.load(
+        runAnimationPath,
+        (runAnimation) => {
+            try {
+                console.log("run.fbx animation loaded");
+                
+                if (runAnimation.animations && runAnimation.animations.length > 0) {
+                    // Clear existing animations
+                    animationActions.forEach(action => {
+                        if (action && action.isPlaying()) {
+                            action.stop();
+                            action.reset();
+                        }
+                    });
+                    animationActions = [];
+                    animationClips = [];
+                    animationNames = [];
+                    
+                    // Add run animation
+                    runAnimation.animations.forEach(clip => {
+                        if (clip.tracks && clip.tracks.length > 0) {
+                            animationClips.push(clip);
+                            animationNames.push(clip.name || "Run");
+                            console.log(`✓ Loaded Run animation: ${clip.name || "Run"}`);
+                        }
+                    });
+                    
+                    if (animationClips.length > 0) {
+                        // Play the run animation
+                        setTimeout(() => {
+                            try {
+                                playMixamoAnimation(0);
+                                console.log("Run animation started!");
+                                
+                                if (startButton) {
+                                    startButton.textContent = "Animation Playing!";
+                                    startButton.style.background = "#27ae60";
+                                    startButton.disabled = false;
+                                }
+                            } catch (error) {
+                                console.error("Error playing run animation:", error);
+                                if (startButton) {
+                                    startButton.textContent = "Start Animation";
+                                    startButton.disabled = false;
+                                }
+                            }
+                        }, 100);
+                    } else {
+                        console.warn("No valid animations found in run.fbx");
+                        if (startButton) {
+                            startButton.textContent = "Start Animation";
+                            startButton.disabled = false;
+                        }
+                    }
+                } else {
+                    console.warn("No animations found in run.fbx");
+                    if (startButton) {
+                        startButton.textContent = "Start Animation";
+                        startButton.disabled = false;
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing run.fbx:", error);
+                if (startButton) {
+                    startButton.textContent = "Start Animation";
+                    startButton.disabled = false;
+                }
+            }
+        },
+        (progress) => {
+            if (progress.total > 0) {
+                const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                console.log(`Loading run.fbx... ${percent}%`);
+            }
+        },
+        (error) => {
+            console.error("Error loading run.fbx:", error);
+            alert("Failed to load run.fbx animation: " + error.message);
+            if (startButton) {
+                startButton.textContent = "Start Animation";
+                startButton.disabled = false;
+            }
+        }
+    );
+}
+
+// OLD FUNCTION - REMOVED: Function to load Dancing.dae animation manually
+function loadDancingAnimation_OLD() {
     if (!currentVrm || !currentVrm.scene) {
         alert("Please load a VRM model first!");
         return;
