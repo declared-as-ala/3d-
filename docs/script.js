@@ -24,6 +24,8 @@ const lerp = Kalidokit.Vector.lerp;
 
 /* THREEJS WORLD SETUP */
 let currentVrm;
+let currentFBXModel = null; // For FBX models like Remy
+let isFBXModel = false; // Track if we're using FBX or VRM
 
 // renderer
 const renderer = new THREE.WebGLRenderer({ alpha: true });
@@ -177,12 +179,16 @@ function animate() {
         }
         
         // Simple idle rotation when tracking is disabled or not active
-        if (!isTrackingEnabled && currentVrm.scene) {
+        const currentModel = isFBXModel ? currentFBXModel : (currentVrm ? currentVrm.scene : null);
+        
+        if (!isTrackingEnabled && currentModel) {
             // Rotate continuously when tracking is disabled
-            currentVrm.scene.rotation.y += idleRotationSpeed * delta;
+            currentModel.rotation.y += idleRotationSpeed * delta;
             
-            // Avatar interaction with cubes when tracking is disabled
-            avatarPushCubes(delta);
+            // Avatar interaction with cubes when tracking is disabled (only for VRM)
+            if (!isFBXModel && currentVrm) {
+                avatarPushCubes(delta);
+            }
             
             // Animate interactive cubes
             interactiveCubes.forEach(cube => {
@@ -197,9 +203,9 @@ function animate() {
                     }
                 }
             });
-        } else if (isTrackingEnabled && !isTrackingActive && currentVrm.scene) {
+        } else if (isTrackingEnabled && !isTrackingActive && currentModel) {
             // Rotate when tracking is enabled but no tracking detected (waiting)
-            currentVrm.scene.rotation.y += idleRotationSpeed * delta;
+            currentModel.rotation.y += idleRotationSpeed * delta;
         }
         
         // Push cubes with hands when tracking is active
@@ -975,14 +981,70 @@ if (vrmUploadInput) {
     });
 }
 
-// Animate Rotation Helper function
-const rigRotation = (name, rotation = { x: 0, y: 0, z: 0 }, dampener = 1, lerpAmount = 0.3) => {
-    if (!currentVrm) {
-        return;
+// Helper function to find bone by name in FBX model
+function findBoneByName(object, boneName) {
+    if (!object) return null;
+    
+    // Common Mixamo bone name mappings
+    const boneNameMap = {
+        "Hips": ["mixamorigHips", "Hips", "hip"],
+        "Spine": ["mixamorigSpine", "Spine", "spine"],
+        "Chest": ["mixamorigSpine1", "Chest", "chest"],
+        "Neck": ["mixamorigNeck", "Neck", "neck"],
+        "Head": ["mixamorigHead", "Head", "head"],
+        "LeftUpperArm": ["mixamorigLeftArm", "LeftUpperArm", "LeftArm"],
+        "LeftLowerArm": ["mixamorigLeftForeArm", "LeftLowerArm", "LeftForeArm"],
+        "RightUpperArm": ["mixamorigRightArm", "RightUpperArm", "RightArm"],
+        "RightLowerArm": ["mixamorigRightForeArm", "RightLowerArm", "RightForeArm"],
+        "LeftHand": ["mixamorigLeftHand", "LeftHand"],
+        "RightHand": ["mixamorigRightHand", "RightHand"],
+        "LeftUpperLeg": ["mixamorigLeftUpLeg", "LeftUpperLeg", "LeftUpLeg"],
+        "LeftLowerLeg": ["mixamorigLeftLeg", "LeftLowerLeg", "LeftLeg"],
+        "RightUpperLeg": ["mixamorigRightUpLeg", "RightUpperLeg", "RightUpLeg"],
+        "RightLowerLeg": ["mixamorigRightLeg", "RightLowerLeg", "RightLeg"],
+    };
+    
+    const searchNames = boneNameMap[boneName] || [boneName];
+    
+    function searchRecursive(obj) {
+        if (!obj) return null;
+        
+        // Check if this object matches any of the search names
+        const objName = obj.name ? obj.name.toLowerCase() : "";
+        for (const searchName of searchNames) {
+            if (objName.includes(searchName.toLowerCase())) {
+                return obj;
+            }
+        }
+        
+        // Search in children
+        if (obj.children) {
+            for (const child of obj.children) {
+                const found = searchRecursive(child);
+                if (found) return found;
+            }
+        }
+        
+        return null;
     }
-    const Part = currentVrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[name]);
+    
+    return searchRecursive(object);
+}
+
+// Animate Rotation Helper function (supports both VRM and FBX)
+const rigRotation = (name, rotation = { x: 0, y: 0, z: 0 }, dampener = 1, lerpAmount = 0.3) => {
+    let Part = null;
+    
+    if (isFBXModel && currentFBXModel) {
+        // For FBX models, find bone by name
+        Part = findBoneByName(currentFBXModel, name);
+    } else if (currentVrm) {
+        // For VRM models, use humanoid bone system
+        Part = currentVrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[name]);
+    }
+    
     if (!Part) {
-        return;
+        return; // Bone not found
     }
 
     let euler = new THREE.Euler(
@@ -995,22 +1057,30 @@ const rigRotation = (name, rotation = { x: 0, y: 0, z: 0 }, dampener = 1, lerpAm
     Part.quaternion.slerp(quaternion, lerpAmount); // interpolate
 };
 
-// Animate Position Helper Function
+// Animate Position Helper Function (supports both VRM and FBX)
 const rigPosition = (name, position = { x: 0, y: 0, z: 0 }, dampener = 1, lerpAmount = 0.3) => {
-    if (!currentVrm) {
-        return;
+    let Part = null;
+    
+    if (isFBXModel && currentFBXModel) {
+        // For FBX models, find bone by name
+        Part = findBoneByName(currentFBXModel, name);
+    } else if (currentVrm) {
+        // For VRM models, use humanoid bone system
+        Part = currentVrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[name]);
     }
-    const Part = currentVrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[name]);
+    
     if (!Part) {
-        return;
+        return; // Bone not found
     }
+    
     let vector = new THREE.Vector3(position.x * dampener, position.y * dampener, position.z * dampener);
     Part.position.lerp(vector, lerpAmount); // interpolate
 };
 
 let oldLookTarget = new THREE.Euler();
 const rigFace = (riggedFace) => {
-    if (!currentVrm) {
+    // Face rigging only works with VRM (blendshapes)
+    if (!currentVrm || isFBXModel) {
         return;
     }
     rigRotation("Neck", riggedFace.head, 0.7);
@@ -1057,10 +1127,18 @@ const rigFace = (riggedFace) => {
     currentVrm.lookAt.applyer.lookAt(lookTarget);
 };
 
-/* VRM Character Animator */
+/* Character Animator (supports both VRM and FBX) */
 const animateVRM = (vrm, results) => {
-    if (!vrm) {
+    // Support both VRM and FBX models
+    if (!vrm && !currentFBXModel) {
+        // If using FBX, check if model is loaded
+        if (isFBXModel && !currentFBXModel) {
         return;
+        }
+        // If using VRM, check if VRM is loaded
+        if (!isFBXModel && !currentVrm) {
+            return;
+        }
     }
     // Take the results from `Holistic` and animate character based on its Face, Pose, and Hand Keypoints.
     let riggedPose, riggedFace;
@@ -1074,13 +1152,21 @@ const animateVRM = (vrm, results) => {
     const leftHandLandmarks = results.rightHandLandmarks;
     const rightHandLandmarks = results.leftHandLandmarks;
 
-    // Animate Face
-    if (faceLandmarks) {
+    // Animate Face (only for VRM - FBX doesn't support blendshapes)
+    if (faceLandmarks && !isFBXModel) {
         riggedFace = Kalidokit.Face.solve(faceLandmarks, {
             runtime: "mediapipe",
             video: videoElement,
         });
         rigFace(riggedFace);
+    } else if (faceLandmarks && isFBXModel) {
+        // For FBX, only animate head rotation (no blendshapes)
+        riggedFace = Kalidokit.Face.solve(faceLandmarks, {
+            runtime: "mediapipe",
+            video: videoElement,
+        });
+        rigRotation("Neck", riggedFace.head, 0.7);
+        rigRotation("Head", riggedFace.head, 0.5);
     }
 
     // Animate Pose
@@ -1162,6 +1248,8 @@ const animateVRM = (vrm, results) => {
             x: riggedRightHand.RightWrist.x,
         });
         }
+    }
+    
     // Update hand positions for cube interaction (after both hands are processed)
     updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand);
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
@@ -1189,6 +1277,14 @@ let videoElement = document.querySelector(".input_video"),
 const onResults = (results) => {
     // Only process if tracking is enabled
     if (!isTrackingEnabled) {
+        return;
+    }
+    
+    // Check if we have a model to animate
+    if (isFBXModel && !currentFBXModel) {
+        return;
+    }
+    if (!isFBXModel && !currentVrm) {
         return;
     }
     
@@ -1695,6 +1791,14 @@ function setupTrackingButton() {
             loadDancingAnimation();
         });
     }
+    
+    // Setup button to load Remy FBX model
+    const loadRemyButton = document.getElementById("load-remy");
+    if (loadRemyButton) {
+        loadRemyButton.addEventListener("click", () => {
+            loadRemyFBX();
+        });
+    }
 }
 
 // Function to load Dancing.dae animation manually
@@ -1890,6 +1994,185 @@ function loadDancingAnimation() {
             alert("Failed to load Dancing.dae: " + error.message);
             if (loadButton) {
                 loadButton.textContent = "Load Dancing Animation";
+                loadButton.disabled = false;
+            }
+        }
+    );
+}
+
+// Function to load Remy.fbx model and run.fbx animation
+function loadRemyFBX() {
+    if (typeof THREE.FBXLoader === 'undefined') {
+        alert("FBXLoader is not loaded! Please refresh the page.");
+        return;
+    }
+    
+    // Remove existing models
+    if (currentVrm && currentVrm.scene) {
+        scene.remove(currentVrm.scene);
+        currentVrm = null;
+    }
+    if (currentFBXModel) {
+        scene.remove(currentFBXModel);
+        currentFBXModel = null;
+    }
+    
+    // Stop any existing animations
+    if (animationMixer) {
+        animationActions.forEach(action => {
+            if (action && action.isPlaying()) {
+                action.stop();
+                action.reset();
+            }
+        });
+        animationActions = [];
+        animationClips = [];
+        animationNames = [];
+    }
+    
+    const fbxLoader = new THREE.FBXLoader();
+    const remyPath = "Remy.fbx";
+    const runAnimationPath = "animations/run.fbx";
+    
+    console.log("Loading Remy.fbx model...");
+    
+    const loadButton = document.getElementById("load-remy");
+    if (loadButton) {
+        loadButton.textContent = "Loading Remy...";
+        loadButton.disabled = true;
+    }
+    
+    // Load Remy model
+    fbxLoader.load(
+        remyPath,
+        (remyModel) => {
+            try {
+                console.log("Remy.fbx loaded successfully");
+                
+                // Add Remy to scene
+                scene.add(remyModel);
+                currentFBXModel = remyModel;
+                isFBXModel = true;
+                
+                // Position and scale Remy
+                remyModel.position.set(0, 0, 0);
+                remyModel.scale.set(0.01, 0.01, 0.01); // FBX models are usually in cm, scale down
+                remyModel.rotation.y = Math.PI; // Face camera
+                
+                // Initialize animation mixer for FBX model
+                if (!animationMixer) {
+                    animationMixer = new THREE.AnimationMixer(remyModel);
+                    console.log("Animation mixer initialized for Remy");
+                } else {
+                    // Update mixer root to Remy
+                    animationMixer = new THREE.AnimationMixer(remyModel);
+                }
+                
+                // Now load run.fbx animation
+                console.log("Loading run.fbx animation...");
+                fbxLoader.load(
+                    runAnimationPath,
+                    (runAnimation) => {
+                        try {
+                            console.log("run.fbx animation loaded");
+                            
+                            if (runAnimation.animations && runAnimation.animations.length > 0) {
+                                // Clear existing animations
+                                animationClips = [];
+                                animationNames = [];
+                                
+                                // Add run animation
+                                runAnimation.animations.forEach(clip => {
+                                    if (clip.tracks && clip.tracks.length > 0) {
+                                        animationClips.push(clip);
+                                        animationNames.push(clip.name || "Run");
+                                        console.log(`✓ Loaded Run animation: ${clip.name || "Run"}`);
+                                    }
+                                });
+                                
+                                if (animationClips.length > 0) {
+                                    // Stop tracking if active (to play animation)
+                                    if (isTrackingEnabled) {
+                                        stopTracking();
+                                    }
+                                    
+                                    // Play the run animation
+                                    setTimeout(() => {
+                                        try {
+                                            playMixamoAnimation(0);
+                                            console.log("Run animation started!");
+                                            
+                                            if (loadButton) {
+                                                loadButton.textContent = "Remy Loaded!";
+                                                loadButton.style.background = "#27ae60";
+                                                loadButton.disabled = false;
+                                            }
+                                        } catch (error) {
+                                            console.error("Error playing run animation:", error);
+                                            if (loadButton) {
+                                                loadButton.textContent = "Load Remy (FBX)";
+                                                loadButton.disabled = false;
+                                            }
+                                        }
+                                    }, 100);
+                                } else {
+                                    console.warn("No valid animations found in run.fbx");
+                                    if (loadButton) {
+                                        loadButton.textContent = "Load Remy (FBX)";
+                                        loadButton.disabled = false;
+                                    }
+                                }
+                            } else {
+                                console.warn("No animations found in run.fbx");
+                                if (loadButton) {
+                                    loadButton.textContent = "Load Remy (FBX)";
+                                    loadButton.disabled = false;
+                                }
+                            }
+                        } catch (error) {
+                            console.error("Error processing run.fbx:", error);
+                            if (loadButton) {
+                                loadButton.textContent = "Load Remy (FBX)";
+                                loadButton.disabled = false;
+                            }
+                        }
+                    },
+                    (progress) => {
+                        if (progress.total > 0) {
+                            const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                            console.log(`Loading run.fbx... ${percent}%`);
+                        }
+                    },
+                    (error) => {
+                        console.error("Error loading run.fbx:", error);
+                        alert("Failed to load run.fbx animation: " + error.message);
+                        if (loadButton) {
+                            loadButton.textContent = "Load Remy (FBX)";
+                            loadButton.disabled = false;
+                        }
+                    }
+                );
+                
+            } catch (error) {
+                console.error("Error processing Remy.fbx:", error);
+                alert("Error loading Remy.fbx: " + error.message);
+                if (loadButton) {
+                    loadButton.textContent = "Load Remy (FBX)";
+                    loadButton.disabled = false;
+                }
+            }
+        },
+        (progress) => {
+            if (progress.total > 0) {
+                const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                console.log(`Loading Remy.fbx... ${percent}%`);
+            }
+        },
+        (error) => {
+            console.error("Error loading Remy.fbx:", error);
+            alert("Failed to load Remy.fbx: " + error.message);
+            if (loadButton) {
+                loadButton.textContent = "Load Remy (FBX)";
                 loadButton.disabled = false;
             }
         }
