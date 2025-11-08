@@ -58,14 +58,21 @@ const scene = new THREE.Scene();
 
 // Add background image
 const textureLoader = new THREE.TextureLoader();
-const backgroundTexture = textureLoader.load("./background.jpg", () => {
-    // Set background as scene background
-    scene.background = backgroundTexture;
-}, undefined, (error) => {
-    console.error("Error loading background image:", error);
-    // Fallback to gradient if image fails
-    scene.background = new THREE.Color(0x87CEEB);
-});
+const backgroundTexture = textureLoader.load(
+    "./background.jpg", 
+    () => {
+        // Set background as scene background
+        scene.background = backgroundTexture;
+        console.log("Background image loaded successfully");
+    }, 
+    undefined, 
+    (error) => {
+        console.warn("Error loading background image:", error);
+        console.warn("Using fallback gradient background");
+        // Fallback to gradient if image fails
+        scene.background = new THREE.Color(0x87CEEB);
+    }
+);
 
 // light
 const light = new THREE.DirectionalLight(0xffffff);
@@ -133,7 +140,16 @@ function loadVRMModel(fileOrUrl) {
 
     const onError = (error) => {
         console.error("Error loading model:", error);
-        alert("Error loading VRM model. Please try another file.");
+        // Check if it's a 404 or HTML response (common on Vercel)
+        if (error && error.message && error.message.includes("JSON")) {
+            console.error("File not found (404) or server returned HTML instead of binary file.");
+            console.error("This usually means the VRM file is not deployed or not accessible.");
+            console.error("Tried to load:", fileOrUrl);
+            alert("VRM file not found (404). Please make sure the file exists and is properly deployed on Vercel.");
+        } else {
+            console.error("Full error:", error);
+            alert("Error loading VRM model. Please try another file.");
+        }
     };
 
     // Load from file or URL
@@ -155,19 +171,39 @@ function loadVRMModel(fileOrUrl) {
         reader.readAsArrayBuffer(fileOrUrl);
     } else {
         // For URLs, ensure proper response type
-        loader.load(
-            fileOrUrl, 
-            onLoad, 
-            onProgress, 
-            (error) => {
-                console.error("Loader error details:", error);
-                // Check if it's a 404 or HTML response
-                if (error && error.message && error.message.includes("JSON")) {
-                    console.error("Possible 404 - file not found or server returned HTML instead of binary");
+        // First, try to fetch the file to check if it exists
+        fetch(fileOrUrl, { method: 'HEAD' })
+            .then(response => {
+                if (!response.ok) {
+                    console.error(`File not found: ${fileOrUrl} (Status: ${response.status})`);
+                    onError(new Error(`File not found: ${response.status} ${response.statusText}`));
+                    return;
                 }
-                onError(error);
-            }
-        );
+                // File exists, proceed with loading
+                loader.load(
+                    fileOrUrl, 
+                    onLoad, 
+                    onProgress, 
+                    (error) => {
+                        console.error("Loader error details:", error);
+                        // Check if it's a 404 or HTML response
+                        if (error && error.message && error.message.includes("JSON")) {
+                            console.error("Possible 404 - file not found or server returned HTML instead of binary");
+                        }
+                        onError(error);
+                    }
+                );
+            })
+            .catch(fetchError => {
+                console.error("Failed to check file existence:", fetchError);
+                // Try loading anyway (might work despite fetch error)
+                loader.load(
+                    fileOrUrl, 
+                    onLoad, 
+                    onProgress, 
+                    onError
+                );
+            });
     }
 }
 
@@ -452,86 +488,12 @@ const drawResults = (results) => {
     });
 };
 
-// Camera setup - wait for user interaction
-let camera = null;
-let cameraStarted = false;
-
-function startCamera() {
-    if (cameraStarted) {
-        return;
-    }
-
-    try {
-        // Use `Mediapipe` utils to get camera - lower resolution = higher fps
-        camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await holistic.send({ image: videoElement });
-            },
-            width: 640,
-            height: 480,
-        });
-        
-        camera.start()
-            .then(() => {
-                cameraStarted = true;
-                // Hide the start camera button
-                const startButton = document.getElementById("start-camera");
-                if (startButton) {
-                    startButton.classList.add("hidden");
-                }
-                console.log("Camera started successfully");
-            })
-            .catch((error) => {
-                console.error("Camera error:", error);
-                showCameraError(error);
-            });
-    } catch (error) {
-        console.error("Failed to initialize camera:", error);
-        showCameraError(error);
-    }
-}
-
-function showCameraError(error) {
-    // Remove existing error message if any
-    const existingError = document.querySelector(".camera-error");
-    if (existingError) {
-        existingError.remove();
-    }
-
-    // Create error message
-    const errorDiv = document.createElement("div");
-    errorDiv.className = "camera-error";
-    
-    let errorMessage = "Camera access denied. ";
-    if (error.name === "NotAllowedError" || error.message?.includes("Permission denied")) {
-        errorMessage += "Please allow camera access in your browser settings and click 'Start Camera' again.";
-    } else if (error.name === "NotFoundError" || error.message?.includes("not found")) {
-        errorMessage += "No camera found. Please connect a camera device.";
-    } else {
-        errorMessage += "Please check your camera settings and try again.";
-    }
-    
-    errorDiv.textContent = errorMessage;
-    document.body.appendChild(errorDiv);
-
-    // Show start button again
-    const startButton = document.getElementById("start-camera");
-    if (startButton) {
-        startButton.classList.remove("hidden");
-    }
-
-    // Remove error after 5 seconds
-    setTimeout(() => {
-        if (errorDiv.parentNode) {
-            errorDiv.remove();
-        }
-    }, 5000);
-}
-
-// Add click handler to start camera button
-const startCameraButton = document.getElementById("start-camera");
-if (startCameraButton) {
-    startCameraButton.addEventListener("click", () => {
-        startCamera();
-    });
-}
+// Use `Mediapipe` utils to get camera - lower resolution = higher fps
+const camera = new Camera(videoElement, {
+    onFrame: async () => {
+        await holistic.send({ image: videoElement });
+    },
+    width: 640,
+    height: 480,
+});
+camera.start();
