@@ -338,8 +338,11 @@ function loadIdleAnimation(vrm) {
     // Local files: Use relative paths from docs/ folder (e.g., "animations/idle.glb")
     // URLs: Use full URLs (e.g., "https://cdn.jsdelivr.net/gh/...")
     const animationFiles = [
-        // Add your Mixamo GLB animations here (download from Mixamo.com as "glTF" format)
+        // Add your animations here (supports GLB, FBX, and DAE formats)
         // Example local files:
+        "animations/Dancing.dae",  // COLLADA format animation
+        
+        // More examples:
         // "animations/idle.glb",
         // "animations/walking.glb",
         // "animations/dancing.glb",
@@ -373,12 +376,19 @@ function loadIdleAnimation(vrm) {
         fbxLoader = new THREE.FBXLoader();
     }
     
+    // ColladaLoader is optional (only needed if using DAE files)
+    let colladaLoader = null;
+    if (typeof THREE.ColladaLoader !== 'undefined') {
+        colladaLoader = new THREE.ColladaLoader();
+    }
+    
     animationFiles.forEach((filePath, index) => {
         console.log(`Loading animation ${index + 1}/${totalAnimationsToLoad}: ${filePath}`);
         
         // Determine file type and use appropriate loader
         const isFBX = filePath.toLowerCase().endsWith('.fbx');
         const isGLB = filePath.toLowerCase().endsWith('.glb') || filePath.toLowerCase().endsWith('.gltf');
+        const isDAE = filePath.toLowerCase().endsWith('.dae');
         
         // Prefer GLB format for VRM compatibility
         if (isFBX && !fbxLoader) {
@@ -390,7 +400,16 @@ function loadIdleAnimation(vrm) {
             return;
         }
         
-        const loader = isFBX ? fbxLoader : gltfLoader;
+        if (isDAE && !colladaLoader) {
+            console.warn(`DAE file detected but ColladaLoader not available. Skipping: ${filePath}`);
+            animationLoadCount++;
+            if (animationLoadCount === totalAnimationsToLoad) {
+                checkAndStartAnimations();
+            }
+            return;
+        }
+        
+        const loader = isFBX ? fbxLoader : (isDAE ? colladaLoader : gltfLoader);
         
         loader.load(
             filePath,
@@ -405,6 +424,32 @@ function loadIdleAnimation(vrm) {
                         } else {
                             console.warn(`No animations found in FBX file ${index + 1}: ${filePath}`);
                         }
+                    } else if (isDAE) {
+                        // COLLADA (DAE) format: animations are in the scene
+                        // ColladaLoader returns an object with 'scene' and potentially 'animations'
+                        if (loaded.animations && loaded.animations.length > 0) {
+                            clips = loaded.animations;
+                        } else if (loaded.scene && loaded.scene.animations && loaded.scene.animations.length > 0) {
+                            clips = loaded.scene.animations;
+                        } else {
+                            // Try to extract animations from the scene hierarchy
+                            const extractAnimations = (object) => {
+                                if (object.animations && object.animations.length > 0) {
+                                    return object.animations;
+                                }
+                                let found = [];
+                                if (object.children) {
+                                    object.children.forEach(child => {
+                                        found = found.concat(extractAnimations(child));
+                                    });
+                                }
+                                return found;
+                            };
+                            clips = extractAnimations(loaded.scene || loaded);
+                            if (clips.length === 0) {
+                                console.warn(`No animations found in DAE file ${index + 1}: ${filePath}`);
+                            }
+                        }
                     } else {
                         // GLB/GLTF format: animations are in gltf.animations
                         clips = loaded.animations || [];
@@ -414,14 +459,15 @@ function loadIdleAnimation(vrm) {
                         // Try to retarget animations to VRM skeleton
                         clips.forEach(clip => {
                             try {
-                                // For FBX files, skip retargeting as it often causes issues
-                                if (isFBX) {
-                                    // FBX animations often don't work well with VRM retargeting
+                                // For FBX and DAE files, skip retargeting as they often cause issues
+                                if (isFBX || isDAE) {
+                                    // FBX and DAE animations often don't work well with VRM retargeting
                                     // Use original clip without retargeting
-                                    console.warn(`FBX animation detected. Skipping retargeting for ${clip.name || `Animation_${index + 1}`}`);
+                                    const format = isFBX ? 'FBX' : 'DAE';
+                                    console.warn(`${format} animation detected. Skipping retargeting for ${clip.name || `Animation_${index + 1}`}`);
                                     animationClips.push(clip);
                                     animationNames.push(clip.name || `Animation_${index + 1}`);
-                                    console.log(`✓ Loaded FBX animation (no retargeting): ${clip.name || `Animation_${index + 1}`}`);
+                                    console.log(`✓ Loaded ${format} animation (no retargeting): ${clip.name || `Animation_${index + 1}`}`);
                                 } else {
                                     // For GLB/GLTF, try retargeting
                                     const retargetedClip = THREE.VRMUtils.retargetAnimation ? 
