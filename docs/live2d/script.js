@@ -1,3 +1,9 @@
+// Ensure PIXI is loaded (from CDN in HTML)
+if (typeof PIXI === 'undefined') {
+    console.error("PIXI is not loaded. Make sure the PIXI.js script is included in index.html");
+    throw new Error("PIXI.js is required but not loaded");
+}
+
 const {
     Application,
     live2d: { Live2DModel },
@@ -78,7 +84,7 @@ const videoElement = document.querySelector(".input_video"),
     // Add mousewheel events to scale model
     document.querySelector("#live2d").addEventListener("wheel", (e) => {
         e.preventDefault();
-        currentModel.scale.set(clamp(currentModel.scale.x + event.deltaY * -0.001, -0.5, 10));
+        currentModel.scale.set(clamp(currentModel.scale.x + e.deltaY * -0.001, -0.5, 10));
     });
 
     // add live2d model to stage

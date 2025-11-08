@@ -179,87 +179,77 @@ loader.crossOrigin = "anonymous";
             console.log(`Converted relative path "${fileOrUrl}" to absolute URL: "${url}"`);
         }
         
-        // First, try to fetch the file to check if it exists and get content type
-        fetch(url, { method: 'HEAD' })
+        // Use fetch with arrayBuffer to have better control and detect HTML responses
+        console.log(`Fetching VRM file from: ${url}`);
+        fetch(url)
             .then(response => {
-                console.log(`File check response: ${response.status} ${response.statusText}`);
+                console.log(`Response status: ${response.status} ${response.statusText}`);
                 console.log(`Content-Type: ${response.headers.get('Content-Type')}`);
                 const contentLength = response.headers.get('Content-Length');
-                console.log(`Content-Length: ${contentLength}`);
+                console.log(`Content-Length header: ${contentLength}`);
                 
                 if (!response.ok) {
                     console.error(`File not found: ${url} (Status: ${response.status})`);
-                    // Try to get the actual response body to see what was returned
-                    return fetch(url, { method: 'GET' })
-                        .then(res => res.text())
-                        .then(text => {
-                            console.error(`Server returned (first 200 chars): ${text.substring(0, 200)}`);
-                            onError(new Error(`File not found: ${response.status} ${response.statusText}`));
-                        });
+                    return response.text().then(text => {
+                        console.error(`Server returned (first 500 chars): ${text.substring(0, 500)}`);
+                        onError(new Error(`File not found: ${response.status} ${response.statusText}`));
+                    });
                 }
                 
+                // Check Content-Type
                 const contentType = response.headers.get('Content-Type');
                 if (contentType && contentType.includes('text/html')) {
                     console.error(`Server returned HTML instead of binary file. Content-Type: ${contentType}`);
-                    // Get the actual response to see what was returned
-                    return fetch(url, { method: 'GET' })
-                        .then(res => res.text())
-                        .then(text => {
-                            console.error(`Server returned HTML (first 500 chars): ${text.substring(0, 500)}`);
-                            onError(new Error('Server returned HTML instead of VRM file. File may not be deployed.'));
-                        });
+                    return response.text().then(text => {
+                        console.error(`HTML content (first 500 chars): ${text.substring(0, 500)}`);
+                        onError(new Error('Server returned HTML instead of VRM file. File may not be deployed.'));
+                    });
                 }
                 
-                // Check if Content-Length is suspiciously small (likely HTML error page)
-                if (contentLength && parseInt(contentLength) < 1000) {
-                    console.warn(`Warning: Content-Length is very small (${contentLength} bytes). This might be an error page.`);
-                    // Fetch the actual content to verify
-                    return fetch(url, { method: 'GET' })
-                        .then(res => res.text())
-                        .then(text => {
-                            if (text.length < 1000 && (text.includes('<html') || text.includes('<!DOCTYPE') || text.includes('version'))) {
-                                console.error(`Server returned HTML/error page instead of VRM file. Content (first 500 chars): ${text.substring(0, 500)}`);
-                                onError(new Error(`VRM file appears to be an error page (${text.length} bytes). File may not be properly deployed on Vercel.`));
-                            } else {
-                                // Content looks valid, proceed with loading
-                                console.log(`Loading VRM file from: ${url}`);
-                                loader.load(url, onLoad, onProgress, onError);
-                            }
-                        });
+                // Check Content-Length - VRM files should be at least 100KB (100,000 bytes)
+                if (contentLength && parseInt(contentLength) < 100000) {
+                    console.warn(`Warning: Content-Length is suspiciously small (${contentLength} bytes). VRM files are typically > 1MB.`);
+                    // Still try to load, but check the actual data
                 }
                 
-                // File exists and looks valid, proceed with loading
-                console.log(`Loading VRM file from: ${url}`);
-                loader.load(
-                    url, 
-                    onLoad, 
-                    onProgress, 
-                    (error) => {
-                        console.error("Loader error details:", error);
-                        // Check if it's a 404 or HTML response
-                        if (error && error.message && error.message.includes("JSON")) {
-                            console.error("Possible 404 - file not found or server returned HTML instead of binary");
-                            // Try to fetch the actual content to see what was returned
-                            fetch(url, { method: 'GET' })
-                                .then(res => res.text())
-                                .then(text => {
-                                    console.error(`Actual server response (first 500 chars): ${text.substring(0, 500)}`);
-                                });
-                        }
-                        onError(error);
+                // Fetch as ArrayBuffer
+                return response.arrayBuffer();
+            })
+            .then(arrayBuffer => {
+                if (!arrayBuffer) {
+                    return; // Error already handled
+                }
+                
+                const actualSize = arrayBuffer.byteLength;
+                console.log(`File loaded successfully. Actual size: ${(actualSize / 1024 / 1024).toFixed(2)} MB`);
+                
+                // Check if the file is suspiciously small (likely HTML error page)
+                if (actualSize < 100000) {
+                    // Try to detect if it's HTML
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const textDecoder = new TextDecoder();
+                    const firstBytes = textDecoder.decode(uint8Array.slice(0, 200));
+                    
+                    if (firstBytes.includes('<html') || firstBytes.includes('<!DOCTYPE') || firstBytes.includes('version ht')) {
+                        console.error(`Server returned HTML/error page instead of VRM file. Size: ${actualSize} bytes`);
+                        console.error(`Content (first 500 chars): ${firstBytes.substring(0, 500)}`);
+                        onError(new Error(`VRM file appears to be an error page (${actualSize} bytes). File may not be properly deployed on Vercel.`));
+                        return;
                     }
-                );
+                }
+                
+                // File looks valid, parse it
+                console.log(`Parsing VRM file...`);
+                try {
+                    loader.parse(arrayBuffer, url, onLoad, onError);
+                } catch (parseError) {
+                    console.error("Parse error:", parseError);
+                    onError(parseError);
+                }
             })
             .catch(fetchError => {
-                console.error("Failed to check file existence:", fetchError);
-                console.log(`Attempting to load anyway from: ${url}`);
-                // Try loading anyway (might work despite fetch error)
-                loader.load(
-                    url, 
-                    onLoad, 
-                    onProgress, 
-                    onError
-                );
+                console.error("Failed to fetch file:", fetchError);
+                onError(fetchError);
             });
     }
 }
