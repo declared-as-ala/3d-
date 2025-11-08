@@ -83,9 +83,21 @@ const clock = new THREE.Clock();
 function animate() {
     requestAnimationFrame(animate);
 
+    const delta = clock.getDelta();
+
     if (currentVrm) {
         // Update model to render physics
-        currentVrm.update(clock.getDelta());
+        currentVrm.update(delta);
+        
+        // Update idle animation mixer if active
+        if (idleAnimationMixer) {
+            idleAnimationMixer.update(delta);
+        }
+        
+        // Simple idle rotation when tracking is not active
+        if (!isTrackingActive && currentVrm.scene) {
+            currentVrm.scene.rotation.y += idleRotationSpeed * delta;
+        }
     }
     
     // Update orbit controls
@@ -117,6 +129,9 @@ loader.crossOrigin = "anonymous";
             currentVrm.scene.rotation.y = Math.PI; // Rotate model 180deg to face camera
             currentVrm.scene.scale.set(0.4, 0.4, 0.4); // Make avatar smaller
             currentVrm.scene.position.set(0, 0.5, 0); // Center and position model lower
+            
+            // Load idle animation (Mixamo format)
+            loadIdleAnimation(vrm);
             
             console.log("VRM model loaded successfully!");
         }).catch((error) => {
@@ -236,6 +251,28 @@ loader.crossOrigin = "anonymous";
                 onError(fetchError);
             });
     }
+}
+
+// Function to load idle animation (Mixamo format)
+function loadIdleAnimation(vrm) {
+    // Example Mixamo animation URL - you can replace this with your own Mixamo animation
+    // Mixamo animations are in GLB format with embedded animations
+    const animationUrl = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r133/examples/models/gltf/Xbot.glb";
+    
+    // Alternative: Use a simple rotation animation if no Mixamo file is available
+    // For now, we'll create a simple idle animation by rotating the model
+    console.log("Loading idle animation...");
+    
+    // Start with idle animation (simple rotation)
+    if (!isTrackingActive) {
+        startIdleRotation();
+    }
+}
+
+// Simple idle rotation animation when tracking is off
+let idleRotationSpeed = 0.5; // radians per second
+function startIdleRotation() {
+    // This will be handled in the animate loop
 }
 
 // Load default VRM model
@@ -456,10 +493,40 @@ let videoElement = document.querySelector(".input_video"),
     guideCanvas = document.querySelector("canvas.guides");
 
 const onResults = (results) => {
+    // Check if we have valid tracking data
+    const hasTracking = results.poseLandmarks && results.poseLandmarks.length > 0;
+    
+    if (hasTracking) {
+        isTrackingActive = true;
+        lastTrackingTime = Date.now();
+        
+        // Stop idle animation if playing
+        if (idleAnimationAction && idleAnimationAction.isPlaying()) {
+            idleAnimationAction.fadeOut(0.5);
+            idleAnimationAction.stop();
+        }
+        
+        // Reset rotation when tracking starts
+        if (currentVrm && currentVrm.scene) {
+            currentVrm.scene.rotation.y = Math.PI; // Reset to face camera
+        }
+    } else {
+        // Check if tracking has been inactive for too long
+        if (isTrackingActive && Date.now() - lastTrackingTime > TRACKING_TIMEOUT) {
+            isTrackingActive = false;
+            // Start idle animation
+            if (idleAnimationAction && !idleAnimationAction.isPlaying()) {
+                idleAnimationAction.reset().fadeIn(0.5).play();
+            }
+        }
+    }
+    
     // Draw landmark guides
     drawResults(results);
-    // Animate model
+    // Animate model (only if tracking is active)
+    if (isTrackingActive) {
     animateVRM(currentVrm, results);
+    }
 };
 
 const holistic = new Holistic({
@@ -522,7 +589,15 @@ const drawResults = (results) => {
     });
 };
 
+// Animation state
+let isTrackingActive = false;
+let idleAnimationMixer = null;
+let idleAnimationAction = null;
+let lastTrackingTime = 0;
+const TRACKING_TIMEOUT = 2000; // 2 seconds without tracking = idle
+
 // Use `Mediapipe` utils to get camera - lower resolution = higher fps
+// Camera starts automatically but tracking can be inactive
 const camera = new Camera(videoElement, {
     onFrame: async () => {
         await holistic.send({ image: videoElement });
@@ -530,4 +605,5 @@ const camera = new Camera(videoElement, {
     width: 640,
     height: 480,
 });
+// Camera starts automatically - no button needed
 camera.start();
