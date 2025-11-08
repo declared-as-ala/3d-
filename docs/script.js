@@ -2194,9 +2194,9 @@ function loadRemyFBX() {
     
     // Try multiple possible paths for Remy.fbx
     const remyPaths = [
-        "../Remy.fbx",  // Root of project
-        "Remy.fbx",      // docs folder
+        "Remy.fbx",      // docs folder (preferred location)
         "./Remy.fbx",    // Current directory
+        "../Remy.fbx",   // Root of project (fallback)
     ];
     
     tryLoadRemy(remyPaths);
