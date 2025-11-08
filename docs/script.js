@@ -89,7 +89,12 @@ function animate() {
         // Update model to render physics
         currentVrm.update(delta);
         
-        // Update idle animation mixer if active
+        // Update animation mixer if active (for Mixamo animations)
+        if (animationMixer) {
+            animationMixer.update(delta);
+        }
+        
+        // Update idle animation mixer if active (legacy)
         if (idleAnimationMixer) {
             idleAnimationMixer.update(delta);
         }
@@ -301,32 +306,71 @@ let animationClips = [];
 function loadIdleAnimation(vrm) {
     console.log("Loading Mixamo animations...");
     
+    // Initialize animation mixer for VRM model
+    if (!animationMixer && vrm && vrm.scene) {
+        animationMixer = new THREE.AnimationMixer(vrm.scene);
+        console.log("Animation mixer initialized");
+    }
+    
     // Example Mixamo animation URLs - replace with your own Mixamo animations
     // Mixamo animations are in GLB format with embedded animations
+    // IMPORTANT: You need to host these files on a CDN or server
     const animationUrls = [
-        // You can add multiple Mixamo animation URLs here
-        // Example: "https://your-cdn.com/animations/idle.glb",
+        // Add your Mixamo animation URLs here
+        // Example: "https://cdn.jsdelivr.net/gh/your-repo/animations@main/idle.glb",
         // Example: "https://your-cdn.com/animations/wave.glb",
         // Example: "https://your-cdn.com/animations/dance.glb",
     ];
     
-    // For now, we'll use simple rotation and add interactive cubes
-    // When you have Mixamo animations, uncomment and use the code below
+    // If no animations are provided, use simple rotation
+    if (animationUrls.length === 0) {
+        console.log("No Mixamo animations configured. Using simple rotation animation.");
+        if (!isTrackingEnabled) {
+            startIdleRotation();
+            createInteractiveCubes();
+        }
+        return;
+    }
     
-    /*
+    // Load Mixamo animations
     const loader = new THREE.GLTFLoader();
-    animationUrls.forEach((url, index) => {
-        loader.load(url, (gltf) => {
-            const clips = gltf.animations;
-            if (clips && clips.length > 0) {
-                animationClips.push(...clips);
-                console.log(`Loaded animation ${index + 1}: ${clips[0].name}`);
-            }
-        });
-    });
-    */
+    let loadedCount = 0;
     
-    // Start with simple rotation animation
+    animationUrls.forEach((url, index) => {
+        loader.load(
+            url,
+            (gltf) => {
+                const clips = gltf.animations;
+                if (clips && clips.length > 0) {
+                    // Retarget animations to VRM skeleton
+                    clips.forEach(clip => {
+                        const retargetedClip = THREE.VRMUtils.retargetAnimation(clip, vrm);
+                        if (retargetedClip) {
+                            animationClips.push(retargetedClip);
+                            console.log(`Loaded animation ${index + 1}: ${clip.name}`);
+                        }
+                    });
+                }
+                
+                loadedCount++;
+                // If all animations are loaded and tracking is disabled, play first animation
+                if (loadedCount === animationUrls.length && !isTrackingEnabled && animationClips.length > 0) {
+                    playMixamoAnimation(0);
+                    console.log("Playing first Mixamo animation");
+                }
+            },
+            (progress) => {
+                if (progress.total > 0) {
+                    console.log(`Loading animation ${index + 1}... ${(100.0 * progress.loaded / progress.total).toFixed(1)}%`);
+                }
+            },
+            (error) => {
+                console.error(`Error loading animation ${index + 1} from ${url}:`, error);
+            }
+        );
+    });
+    
+    // Fallback: Start with simple rotation if animations fail to load
     if (!isTrackingEnabled) {
         startIdleRotation();
         createInteractiveCubes();
@@ -757,7 +801,17 @@ const onResults = (results) => {
         isTrackingActive = true;
         lastTrackingTime = Date.now();
         
-        // Stop idle animation if playing
+        // Stop Mixamo animations if playing
+        if (animationActions.length > 0) {
+            animationActions.forEach(action => {
+                if (action.isPlaying()) {
+                    action.fadeOut(0.5);
+                    action.stop();
+                }
+            });
+        }
+        
+        // Stop idle animation if playing (legacy)
         if (idleAnimationAction && idleAnimationAction.isPlaying()) {
             idleAnimationAction.fadeOut(0.5);
             idleAnimationAction.stop();
@@ -771,8 +825,11 @@ const onResults = (results) => {
         // Check if tracking has been inactive for too long
         if (isTrackingActive && Date.now() - lastTrackingTime > TRACKING_TIMEOUT) {
             isTrackingActive = false;
-            // Start idle animation
-            if (idleAnimationAction && !idleAnimationAction.isPlaying()) {
+            // Start Mixamo idle animation if available
+            if (animationClips.length > 0 && animationMixer) {
+                playMixamoAnimation(0); // Play first animation
+            } else if (idleAnimationAction && !idleAnimationAction.isPlaying()) {
+                // Fallback to legacy idle animation
                 idleAnimationAction.reset().fadeIn(0.5).play();
             }
         }
