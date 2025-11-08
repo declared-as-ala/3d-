@@ -463,9 +463,6 @@ function loadIdleAnimation(vrm) {
             (error) => {
                 console.error(`Error loading animation ${index + 1} from ${filePath}:`, error);
                 animationLoadCount++;
-                
-                // Continue even if some animations fail
-                animationLoadCount++;
                 checkAndStartAnimations();
             }
         );
