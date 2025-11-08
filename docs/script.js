@@ -1252,6 +1252,8 @@ const animateVRM = (vrm, results) => {
     
     // Update hand positions for cube interaction (after both hands are processed)
     updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand);
+    
+    if (rightHandLandmarks) {
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
         rigRotation("RightRingIntermediate", riggedRightHand.RightRingIntermediate);
         rigRotation("RightRingDistal", riggedRightHand.RightRingDistal);
