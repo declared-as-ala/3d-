@@ -6,11 +6,20 @@ const {
 // Kalidokit provides a simple easing function
 // (linear interpolation) used for animation smoothness
 // you can use a more advanced easing function if you want
+// Ensure Kalidokit is available (from UMD build loaded in HTML)
+if (typeof Kalidokit === 'undefined') {
+    console.error("Kalidokit is not loaded. Make sure the UMD script is included in index.html");
+}
+
 const {
     Face,
     Vector: { lerp },
     Utils: { clamp },
-} = Kalidokit;
+} = Kalidokit || {
+    Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
+    Vector: { lerp: (a, b, t) => a + (b - a) * t },
+    Utils: { clamp: (x, min, max) => Math.max(min, Math.min(max, x)) }
+};
 
 // Url to Live2D
 const modelUrl = "../models/hiyori/hiyori_pro_t10.model3.json";

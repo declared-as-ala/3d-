@@ -162,15 +162,33 @@ function loadVRMModel(fileOrUrl) {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
+                // VRM files are binary GLTF files, parse as ArrayBuffer
                 loader.parse(e.target.result, "", onLoad, onError);
             } catch (error) {
+                console.error("Parse error:", error);
                 onError(error);
             }
         };
-        reader.onerror = onError;
+        reader.onerror = (error) => {
+            console.error("FileReader error:", error);
+            onError(error);
+        };
         reader.readAsArrayBuffer(fileOrUrl);
     } else {
-        loader.load(fileOrUrl, onLoad, onProgress, onError);
+        // For URLs, ensure proper response type
+        loader.load(
+            fileOrUrl, 
+            onLoad, 
+            onProgress, 
+            (error) => {
+                console.error("Loader error details:", error);
+                // Check if it's a 404 or HTML response
+                if (error && error.message && error.message.includes("JSON")) {
+                    console.error("Possible 404 - file not found or server returned HTML instead of binary");
+                }
+                onError(error);
+            }
+        );
     }
 }
 
