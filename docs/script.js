@@ -99,6 +99,9 @@ function animate() {
             // Rotate continuously when tracking is disabled
             currentVrm.scene.rotation.y += idleRotationSpeed * delta;
             
+            // Avatar interaction with cubes when tracking is disabled
+            avatarPushCubes(delta);
+            
             // Animate interactive cubes
             interactiveCubes.forEach(cube => {
                 if (!cube.userData.isDragging) {
@@ -106,8 +109,10 @@ function animate() {
                     cube.rotation.y += cube.userData.rotationSpeed.y;
                     cube.rotation.z += cube.userData.rotationSpeed.z;
                     
-                    // Float animation
-                    cube.position.y = cube.userData.originalPosition.y + Math.sin(Date.now() * 0.001 + cube.userData.originalPosition.x) * 0.2;
+                    // Float animation (only if not being pushed by avatar)
+                    if (!cube.userData.isBeingPushed) {
+                        cube.position.y = cube.userData.originalPosition.y + Math.sin(Date.now() * 0.001 + cube.userData.originalPosition.x) * 0.2;
+                    }
                 }
             });
         } else if (isTrackingEnabled && !isTrackingActive && currentVrm.scene) {
@@ -958,6 +963,157 @@ function updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHan
     } else {
         rightHandWorldPos = null;
     }
+}
+
+// Avatar interaction with cubes when tracking is disabled
+let avatarPushAnimation = {
+    leftArm: { targetRotation: { x: 0, y: 0, z: 0 }, currentRotation: { x: 0, y: 0, z: 0 } },
+    rightArm: { targetRotation: { x: 0, y: 0, z: 0 }, currentRotation: { x: 0, y: 0, z: 0 } },
+    isPushing: false
+};
+
+const AVATAR_PUSH_DISTANCE = 0.8; // Distance threshold for avatar to push cubes
+const AVATAR_PUSH_FORCE = 0.4; // Force applied by avatar
+const AVATAR_ARM_REACH = 0.6; // How far avatar can reach
+
+function avatarPushCubes(delta) {
+    if (!currentVrm || !isTrackingEnabled) return; // Only when tracking is disabled
+    
+    // Get avatar position (center of model)
+    const avatarPos = new THREE.Vector3(0, 1, 0); // Avatar is at origin, height ~1m
+    
+    // Find closest cube behind or to the side of avatar
+    let closestCube = null;
+    let closestDistance = Infinity;
+    let closestDirection = null;
+    
+    interactiveCubes.forEach(cube => {
+        // Calculate relative position from avatar
+        const relativePos = new THREE.Vector3().subVectors(cube.position, avatarPos);
+        const distance = relativePos.length();
+        
+        // Check if cube is close enough and behind/side of avatar
+        // Behind means negative Z (avatar faces forward in -Z direction after rotation)
+        if (distance < AVATAR_PUSH_DISTANCE && distance > 0.1) {
+            // Check if cube is behind or to the side (not directly in front)
+            const angle = Math.atan2(relativePos.x, relativePos.z);
+            const absAngle = Math.abs(angle);
+            
+            // Consider cubes behind (angle > 90°) or to the sides
+            if (absAngle > Math.PI / 3 || relativePos.z > 0) { // Behind or side
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestCube = cube;
+                    closestDirection = relativePos.normalize();
+                }
+            }
+        }
+    });
+    
+    // Animate avatar arms to push the cube
+    if (closestCube) {
+        avatarPushAnimation.isPushing = true;
+        
+        // Determine which arm to use based on cube position
+        const useLeftArm = closestDirection.x > 0; // Cube on left side
+        const useRightArm = closestDirection.x < 0; // Cube on right side
+        
+        // Calculate arm rotation to reach the cube
+        const armDirection = closestDirection.clone();
+        armDirection.y = Math.max(0, armDirection.y); // Keep arm at reasonable height
+        
+        if (useLeftArm) {
+            // Left arm: extend outward and slightly forward
+            avatarPushAnimation.leftArm.targetRotation = {
+                x: Math.PI * 0.3, // Raise arm
+                y: Math.PI * 0.4, // Extend to side
+                z: -Math.PI * 0.2 // Rotate forward
+            };
+        } else if (useRightArm) {
+            // Right arm: extend outward and slightly forward
+            avatarPushAnimation.rightArm.targetRotation = {
+                x: Math.PI * 0.3, // Raise arm
+                y: -Math.PI * 0.4, // Extend to side
+                z: -Math.PI * 0.2 // Rotate forward
+            };
+        }
+        
+        // Apply force to cube
+        const pushForce = AVATAR_PUSH_FORCE * (1 - closestDistance / AVATAR_PUSH_DISTANCE);
+        const pushDirection = closestDirection.clone();
+        pushDirection.y = 0; // Push horizontally
+        pushDirection.normalize();
+        
+        closestCube.userData.velocity.add(pushDirection.multiplyScalar(pushForce * delta * 60));
+        closestCube.userData.isBeingPushed = true;
+        
+        // Reset flag after a short delay
+        setTimeout(() => {
+            closestCube.userData.isBeingPushed = false;
+        }, 100);
+    } else {
+        // Return arms to rest position
+        avatarPushAnimation.isPushing = false;
+        avatarPushAnimation.leftArm.targetRotation = { x: 0, y: 0, z: 0 };
+        avatarPushAnimation.rightArm.targetRotation = { x: 0, y: 0, z: 0 };
+    }
+    
+    // Smoothly animate arm rotations
+    const lerpSpeed = 0.1;
+    ['leftArm', 'rightArm'].forEach(arm => {
+        const armData = avatarPushAnimation[arm];
+        armData.currentRotation.x = lerp(armData.currentRotation.x, armData.targetRotation.x, lerpSpeed);
+        armData.currentRotation.y = lerp(armData.currentRotation.y, armData.targetRotation.y, lerpSpeed);
+        armData.currentRotation.z = lerp(armData.currentRotation.z, armData.targetRotation.z, lerpSpeed);
+        
+        // Apply rotation to avatar arms
+        if (arm === 'leftArm') {
+            rigRotation("LeftUpperArm", {
+                x: armData.currentRotation.x,
+                y: armData.currentRotation.y,
+                z: armData.currentRotation.z
+            }, 1, 1);
+            rigRotation("LeftLowerArm", {
+                x: armData.currentRotation.x * 0.5,
+                y: 0,
+                z: 0
+            }, 1, 1);
+        } else {
+            rigRotation("RightUpperArm", {
+                x: armData.currentRotation.x,
+                y: armData.currentRotation.y,
+                z: armData.currentRotation.z
+            }, 1, 1);
+            rigRotation("RightLowerArm", {
+                x: armData.currentRotation.x * 0.5,
+                y: 0,
+                z: 0
+            }, 1, 1);
+        }
+    });
+    
+    // Apply physics to cubes
+    interactiveCubes.forEach(cube => {
+        // Apply damping (friction)
+        cube.userData.velocity.multiplyScalar(cube.userData.damping);
+        
+        // Update cube position based on velocity
+        cube.position.add(cube.userData.velocity.clone().multiplyScalar(delta));
+        
+        // Add slight gravity
+        cube.userData.velocity.y -= 0.01 * delta * 60;
+        
+        // Keep cubes above ground
+        if (cube.position.y < 0.2) {
+            cube.position.y = 0.2;
+            cube.userData.velocity.y *= -0.5; // Bounce
+        }
+        
+        // Limit velocity to prevent cubes from flying away
+        if (cube.userData.velocity.length() > 0.5) {
+            cube.userData.velocity.normalize().multiplyScalar(0.5);
+        }
+    });
 }
 
 // Apply force to cubes when hand is near
