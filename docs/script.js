@@ -1786,13 +1786,6 @@ function setupTrackingButton() {
         });
     }
     
-    // Setup button to start animation (load run.fbx on Remy)
-    const startAnimationButton = document.getElementById("start-animation");
-    if (startAnimationButton) {
-        startAnimationButton.addEventListener("click", () => {
-            loadRunAnimation();
-        });
-    }
 }
 
 // Function to load run.fbx animation on Remy

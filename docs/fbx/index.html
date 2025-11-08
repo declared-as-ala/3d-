@@ -3,24 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <!-- HTML Meta Tags -->
-    <title>KalidoKit - Face and Body Rig Solver</title>
+    <title>KalidoKit - FBX Mode</title>
     <meta
       name="description"
-      content="Track face and body rigs just your browser webcam!"
+      content="Track face and body rigs with FBX models!"
     />
 
     <!-- Twitter Meta Tags -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta property="twitter:domain" content="kit.kalidoface.com" />
-    <meta property="twitter:url" content="https://kit.kalidoface.com/" />
-    <meta name="twitter:title" content="KalidoKit - Face and Body Rig Solver" />
+    <meta property="twitter:url" content="https://kit.kalidoface.com/fbx/" />
+    <meta name="twitter:title" content="KalidoKit - FBX Mode" />
     <meta
       name="twitter:description"
-      content="Track face and body rigs just your browser webcam!"
-    />
-    <meta
-      name="twitter:image"
-      content="https://cdn.glitch.com/239c5934-4d83-4c5c-bef6-44dcdb04c8fb%2Fkalidoface-meta.jpg?v=1630110302224"
+      content="Track face and body rigs with FBX models!"
     />
     <meta
       name="viewport"
@@ -34,18 +30,55 @@
     <script src="https://unpkg.com/three@0.133.0/build/three.js"></script>
     <!--     GLTF Loader for Three.js -->
     <script src="https://unpkg.com/three@0.133.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!--     fflate library (required for FBX binary files) -->
+    <!-- Use UMD version that properly exposes fflate globally -->
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.js"></script>
+    <script>
+      // UMD version should expose fflate globally, but we verify and ensure it's available
+      (function() {
+        function checkFflate() {
+          // UMD should expose it as window.fflate or just fflate
+          if (typeof window !== 'undefined' && window.fflate) {
+            console.log('✓ fflate available via window.fflate');
+            return true;
+          }
+          if (typeof fflate !== 'undefined') {
+            // Ensure it's in window for FBXLoader
+            if (typeof window !== 'undefined') {
+              window.fflate = fflate;
+            }
+            console.log('✓ fflate found and exposed to window');
+            return true;
+          }
+          return false;
+        }
+        
+        // Check immediately
+        if (checkFflate()) {
+          console.log('✓ fflate is ready');
+        } else {
+          // Wait a bit for UMD to load
+          var attempts = 0;
+          var maxAttempts = 20; // 1 second
+          var interval = setInterval(function() {
+            attempts++;
+            if (checkFflate()) {
+              clearInterval(interval);
+              console.log('✓ fflate loaded after ' + (attempts * 50) + 'ms');
+            } else if (attempts >= maxAttempts) {
+              clearInterval(interval);
+              console.error('✗ fflate failed to load after ' + (maxAttempts * 50) + 'ms');
+            }
+          }, 50);
+        }
+      })();
+    </script>
     <!--     FBX Loader dependencies (required for FBXLoader) -->
     <script src="https://unpkg.com/three@0.133.0/examples/js/libs/inflate.min.js"></script>
-    <!--     fflate library (required for FBX binary files) -->
-    <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/lib/browser.min.js"></script>
-    <!--     FBX Loader for Three.js (for Mixamo FBX animations) -->
+    <!--     FBX Loader for Three.js -->
     <script src="https://unpkg.com/three@0.133.0/examples/js/loaders/FBXLoader.js"></script>
-    <!--     Collada Loader for Three.js (for DAE animations) -->
-    <script src="https://unpkg.com/three@0.133.0/examples/js/loaders/ColladaLoader.js"></script>
     <!--     Orbit Controls for Three.js -->
     <script src="https://unpkg.com/three@0.133.0/examples/js/controls/OrbitControls.js"></script>
-    <!--     VRM Loader for Three.js -->
-    <script src="https://unpkg.com/@pixiv/three-vrm@0.6.7/lib/three-vrm.js"></script>
     <!--     Kalidokit Library (UMD build for compatibility) -->
     <script src="https://cdn.jsdelivr.net/npm/kalidokit@1.1/dist/kalidokit.umd.js"></script>
     <!--     Mediapipe or Tensorflow.js -->
@@ -64,7 +97,7 @@
       src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
       crossorigin="anonymous"
     ></script>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="../style.css" />
   </head>
   <body>
     <div class="preview">
@@ -72,16 +105,16 @@
       <canvas class="guides"></canvas>
       <section>
         <a href="/live2d/"><p>Live2D</p></a>
-        <a class="current" href="/"><p>VRM</p></a>
-        <a href="/fbx/"><p>FBX</p></a>
+        <a href="/"><p>VRM</p></a>
+        <a class="current" href="/fbx/"><p>FBX</p></a>
       </section>
     </div>
     <div class="upload-container">
-      <label for="vrm-upload" class="upload-button">Upload VRM Model</label>
-      <input type="file" id="vrm-upload" accept=".vrm" style="display: none;" />
+      <button id="run-animation" class="upload-button" style="display: none;">Run</button>
       <button id="tracking-toggle" class="upload-button" style="margin-left: 10px;">Start Tracking</button>
     </div>
     <p class="credit">Made by Ala Missaoui</p>
-    <script src="./script.js" type="module" defer></script>
+    <script src="./script.js" defer></script>
   </body>
 </html>
+
