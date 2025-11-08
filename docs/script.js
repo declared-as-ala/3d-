@@ -340,6 +340,18 @@ function loadIdleAnimation(vrm) {
     // Load Mixamo animations
     totalAnimationsToLoad = animationFiles.length;
     animationLoadCount = 0;
+    
+    // Check if FBXLoader is available
+    if (typeof THREE.FBXLoader === 'undefined') {
+        console.error("FBXLoader is not loaded! Make sure FBXLoader.js is included in index.html");
+        // Fallback: use simple rotation
+        if (!isTrackingEnabled) {
+            startIdleRotation();
+            createInteractiveCubes();
+        }
+        return;
+    }
+    
     const gltfLoader = new THREE.GLTFLoader();
     const fbxLoader = new THREE.FBXLoader();
     
