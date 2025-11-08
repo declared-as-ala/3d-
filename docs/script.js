@@ -2033,7 +2033,8 @@ function loadRemyFBX() {
     }
     
     const fbxLoader = new THREE.FBXLoader();
-    const remyPath = "Remy.fbx";
+    // Remy.fbx should be in the docs folder or root - try multiple paths
+    const remyPath = "../Remy.fbx"; // Try root first
     const runAnimationPath = "animations/run.fbx";
     
     console.log("Loading Remy.fbx model...");
@@ -2044,139 +2045,159 @@ function loadRemyFBX() {
         loadButton.disabled = true;
     }
     
-    // Load Remy model
-    fbxLoader.load(
-        remyPath,
-        (remyModel) => {
-            try {
-                console.log("Remy.fbx loaded successfully");
-                
-                // Add Remy to scene
-                scene.add(remyModel);
-                currentFBXModel = remyModel;
-                isFBXModel = true;
-                
-                // Position and scale Remy
-                remyModel.position.set(0, 0, 0);
-                remyModel.scale.set(0.01, 0.01, 0.01); // FBX models are usually in cm, scale down
-                remyModel.rotation.y = Math.PI; // Face camera
-                
-                // Initialize animation mixer for FBX model
-                if (!animationMixer) {
-                    animationMixer = new THREE.AnimationMixer(remyModel);
-                    console.log("Animation mixer initialized for Remy");
-                } else {
-                    // Update mixer root to Remy
-                    animationMixer = new THREE.AnimationMixer(remyModel);
-                }
-                
-                // Now load run.fbx animation
-                console.log("Loading run.fbx animation...");
-                fbxLoader.load(
-                    runAnimationPath,
-                    (runAnimation) => {
-                        try {
-                            console.log("run.fbx animation loaded");
-                            
-                            if (runAnimation.animations && runAnimation.animations.length > 0) {
-                                // Clear existing animations
-                                animationClips = [];
-                                animationNames = [];
+    // Load Remy model - try multiple possible locations
+    function tryLoadRemy(paths, index = 0) {
+        if (index >= paths.length) {
+            alert("Remy.fbx not found! Please ensure Remy.fbx is in the project root or docs folder.");
+            if (loadButton) {
+                loadButton.textContent = "Load Remy (FBX)";
+                loadButton.disabled = false;
+            }
+            return;
+        }
+        
+        const currentPath = paths[index];
+        console.log(`Trying to load Remy from: ${currentPath}`);
+        
+        fbxLoader.load(
+            currentPath,
+            (remyModel) => {
+                try {
+                    console.log(`✓ Remy.fbx loaded successfully from: ${currentPath}`);
+                    
+                    // Add Remy to scene
+                    scene.add(remyModel);
+                    currentFBXModel = remyModel;
+                    isFBXModel = true;
+                    
+                    // Position and scale Remy
+                    remyModel.position.set(0, 0, 0);
+                    remyModel.scale.set(0.01, 0.01, 0.01); // FBX models are usually in cm, scale down
+                    remyModel.rotation.y = Math.PI; // Face camera
+                    
+                    // Initialize animation mixer for FBX model
+                    if (!animationMixer) {
+                        animationMixer = new THREE.AnimationMixer(remyModel);
+                        console.log("Animation mixer initialized for Remy");
+                    } else {
+                        // Update mixer root to Remy
+                        animationMixer = new THREE.AnimationMixer(remyModel);
+                    }
+                    
+                    // Now load run.fbx animation
+                    console.log("Loading run.fbx animation...");
+                    fbxLoader.load(
+                        runAnimationPath,
+                        (runAnimation) => {
+                            try {
+                                console.log("run.fbx animation loaded");
                                 
-                                // Add run animation
-                                runAnimation.animations.forEach(clip => {
-                                    if (clip.tracks && clip.tracks.length > 0) {
-                                        animationClips.push(clip);
-                                        animationNames.push(clip.name || "Run");
-                                        console.log(`✓ Loaded Run animation: ${clip.name || "Run"}`);
-                                    }
-                                });
-                                
-                                if (animationClips.length > 0) {
-                                    // Stop tracking if active (to play animation)
-                                    if (isTrackingEnabled) {
-                                        stopTracking();
-                                    }
+                                if (runAnimation.animations && runAnimation.animations.length > 0) {
+                                    // Clear existing animations
+                                    animationClips = [];
+                                    animationNames = [];
                                     
-                                    // Play the run animation
-                                    setTimeout(() => {
-                                        try {
-                                            playMixamoAnimation(0);
-                                            console.log("Run animation started!");
-                                            
-                                            if (loadButton) {
-                                                loadButton.textContent = "Remy Loaded!";
-                                                loadButton.style.background = "#27ae60";
-                                                loadButton.disabled = false;
-                                            }
-                                        } catch (error) {
-                                            console.error("Error playing run animation:", error);
-                                            if (loadButton) {
-                                                loadButton.textContent = "Load Remy (FBX)";
-                                                loadButton.disabled = false;
-                                            }
+                                    // Add run animation
+                                    runAnimation.animations.forEach(clip => {
+                                        if (clip.tracks && clip.tracks.length > 0) {
+                                            animationClips.push(clip);
+                                            animationNames.push(clip.name || "Run");
+                                            console.log(`✓ Loaded Run animation: ${clip.name || "Run"}`);
                                         }
-                                    }, 100);
+                                    });
+                                    
+                                    if (animationClips.length > 0) {
+                                        // Stop tracking if active (to play animation)
+                                        if (isTrackingEnabled) {
+                                            stopTracking();
+                                        }
+                                        
+                                        // Play the run animation
+                                        setTimeout(() => {
+                                            try {
+                                                playMixamoAnimation(0);
+                                                console.log("Run animation started!");
+                                                
+                                                if (loadButton) {
+                                                    loadButton.textContent = "Remy Loaded!";
+                                                    loadButton.style.background = "#27ae60";
+                                                    loadButton.disabled = false;
+                                                }
+                                            } catch (error) {
+                                                console.error("Error playing run animation:", error);
+                                                if (loadButton) {
+                                                    loadButton.textContent = "Load Remy (FBX)";
+                                                    loadButton.disabled = false;
+                                                }
+                                            }
+                                        }, 100);
+                                    } else {
+                                        console.warn("No valid animations found in run.fbx");
+                                        if (loadButton) {
+                                            loadButton.textContent = "Load Remy (FBX)";
+                                            loadButton.disabled = false;
+                                        }
+                                    }
                                 } else {
-                                    console.warn("No valid animations found in run.fbx");
+                                    console.warn("No animations found in run.fbx");
                                     if (loadButton) {
                                         loadButton.textContent = "Load Remy (FBX)";
                                         loadButton.disabled = false;
                                     }
                                 }
-                            } else {
-                                console.warn("No animations found in run.fbx");
+                            } catch (error) {
+                                console.error("Error processing run.fbx:", error);
                                 if (loadButton) {
                                     loadButton.textContent = "Load Remy (FBX)";
                                     loadButton.disabled = false;
                                 }
                             }
-                        } catch (error) {
-                            console.error("Error processing run.fbx:", error);
+                        },
+                        (progress) => {
+                            if (progress.total > 0) {
+                                const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                                console.log(`Loading run.fbx... ${percent}%`);
+                            }
+                        },
+                        (error) => {
+                            console.error("Error loading run.fbx:", error);
+                            alert("Failed to load run.fbx animation: " + error.message);
                             if (loadButton) {
                                 loadButton.textContent = "Load Remy (FBX)";
                                 loadButton.disabled = false;
                             }
                         }
-                    },
-                    (progress) => {
-                        if (progress.total > 0) {
-                            const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
-                            console.log(`Loading run.fbx... ${percent}%`);
-                        }
-                    },
-                    (error) => {
-                        console.error("Error loading run.fbx:", error);
-                        alert("Failed to load run.fbx animation: " + error.message);
-                        if (loadButton) {
-                            loadButton.textContent = "Load Remy (FBX)";
-                            loadButton.disabled = false;
-                        }
+                    );
+                    
+                } catch (error) {
+                    console.error("Error processing Remy.fbx:", error);
+                    alert("Error loading Remy.fbx: " + error.message);
+                    if (loadButton) {
+                        loadButton.textContent = "Load Remy (FBX)";
+                        loadButton.disabled = false;
                     }
-                );
-                
-            } catch (error) {
-                console.error("Error processing Remy.fbx:", error);
-                alert("Error loading Remy.fbx: " + error.message);
-                if (loadButton) {
-                    loadButton.textContent = "Load Remy (FBX)";
-                    loadButton.disabled = false;
                 }
+            },
+            (progress) => {
+                if (progress.total > 0) {
+                    const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
+                    console.log(`Loading Remy.fbx from ${currentPath}... ${percent}%`);
+                }
+            },
+            (error) => {
+                console.error(`Error loading Remy.fbx from ${currentPath}:`, error);
+                // Try next path
+                tryLoadRemy(paths, index + 1);
             }
-        },
-        (progress) => {
-            if (progress.total > 0) {
-                const percent = (100.0 * progress.loaded / progress.total).toFixed(1);
-                console.log(`Loading Remy.fbx... ${percent}%`);
-            }
-        },
-        (error) => {
-            console.error("Error loading Remy.fbx:", error);
-            alert("Failed to load Remy.fbx: " + error.message);
-            if (loadButton) {
-                loadButton.textContent = "Load Remy (FBX)";
-                loadButton.disabled = false;
-            }
-        }
-    );
+        );
+    }
+    
+    // Try multiple possible paths for Remy.fbx
+    const remyPaths = [
+        "../Remy.fbx",  // Root of project
+        "Remy.fbx",      // docs folder
+        "./Remy.fbx",    // Current directory
+    ];
+    
+    tryLoadRemy(remyPaths);
 }
