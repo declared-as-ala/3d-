@@ -1,41 +1,72 @@
-// Ensure PIXI is loaded (from CDN in HTML)
-if (typeof PIXI === 'undefined') {
-    console.error("PIXI is not loaded. Make sure the PIXI.js script is included in index.html");
-    throw new Error("PIXI.js is required but not loaded");
+// Wait for DOM and dependencies to be ready
+function waitForDependencies() {
+    return new Promise((resolve) => {
+        // Check if dependencies are loaded
+        function checkDependencies() {
+            if (typeof PIXI !== 'undefined' && 
+                typeof Kalidokit !== 'undefined' && 
+                typeof FaceMesh !== 'undefined' &&
+                typeof Camera !== 'undefined' &&
+                typeof drawConnectors !== 'undefined' &&
+                typeof drawLandmarks !== 'undefined') {
+                resolve();
+            } else {
+                // Retry after a short delay
+                setTimeout(checkDependencies, 50);
+            }
+        }
+        checkDependencies();
+    });
 }
 
-const {
-    Application,
-    live2d: { Live2DModel },
-} = PIXI;
+// Initialize after dependencies are ready
+(async function init() {
+    // Wait for DOM
+    if (document.readyState === 'loading') {
+        await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve));
+    }
+    
+    // Wait for dependencies
+    await waitForDependencies();
+    
+    // Ensure PIXI is loaded (from CDN in HTML)
+    if (typeof PIXI === 'undefined') {
+        console.error("PIXI is not loaded. Make sure the PIXI.js script is included in index.html");
+        throw new Error("PIXI.js is required but not loaded");
+    }
 
-// Kalidokit provides a simple easing function
-// (linear interpolation) used for animation smoothness
-// you can use a more advanced easing function if you want
-// Ensure Kalidokit is available (from UMD build loaded in HTML)
-if (typeof Kalidokit === 'undefined') {
-    console.error("Kalidokit is not loaded. Make sure the UMD script is included in index.html");
-}
+    const {
+        Application,
+        live2d: { Live2DModel },
+    } = PIXI;
 
-const {
-    Face,
-    Vector: { lerp },
-    Utils: { clamp },
-} = Kalidokit || {
-    Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
-    Vector: { lerp: (a, b, t) => a + (b - a) * t },
-    Utils: { clamp: (x, min, max) => Math.max(min, Math.min(max, x)) }
-};
+    // Kalidokit provides a simple easing function
+    // (linear interpolation) used for animation smoothness
+    // you can use a more advanced easing function if you want
+    // Ensure Kalidokit is available (from UMD build loaded in HTML)
+    if (typeof Kalidokit === 'undefined') {
+        console.error("Kalidokit is not loaded. Make sure the UMD script is included in index.html");
+    }
 
-// Url to Live2D
-const modelUrl = "../models/hiyori/hiyori_pro_t10.model3.json";
+    const {
+        Face,
+        Vector: { lerp },
+        Utils: { clamp },
+    } = Kalidokit || {
+        Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
+        Vector: { lerp: (a, b, t) => a + (b - a) * t },
+        Utils: { clamp: (x, min, max) => Math.max(min, Math.min(max, x)) }
+    };
 
-let currentModel, facemesh;
+    // Url to Live2D
+    const modelUrl = "../models/hiyori/hiyori_pro_t10.model3.json";
 
-const videoElement = document.querySelector(".input_video"),
-    guideCanvas = document.querySelector("canvas.guides");
+    let currentModel, facemesh;
 
-(async function main() {
+    const videoElement = document.querySelector(".input_video"),
+        guideCanvas = document.querySelector("canvas.guides");
+
+    (async function main() {
     // create pixi application
     const app = new PIXI.Application({
         view: document.getElementById("live2d"),
@@ -109,6 +140,7 @@ const videoElement = document.querySelector(".input_video"),
     facemesh.onResults(onResults);
 
     startCamera();
+    })();
 })();
 
 const onResults = (results) => {
