@@ -25,17 +25,31 @@ const videoElement = document.querySelector(".input_video"),
     const app = new PIXI.Application({
         view: document.getElementById("live2d"),
         autoStart: true,
-        backgroundAlpha: 0,
-        backgroundColor: 0xffffff,
+        backgroundAlpha: 1,
+        backgroundColor: 0x000000, // Temporary background
         resizeTo: window,
     });
+    
+    // Add background image
+    const backgroundSprite = PIXI.Sprite.from("../background.jpg");
+    backgroundSprite.width = window.innerWidth;
+    backgroundSprite.height = window.innerHeight;
+    backgroundSprite.anchor.set(0, 0);
+    app.stage.addChildAt(backgroundSprite, 0);
+    
+    // Update background on window resize
+    function updateBackground() {
+        backgroundSprite.width = window.innerWidth;
+        backgroundSprite.height = window.innerHeight;
+    }
+    window.addEventListener("resize", updateBackground);
 
     // load live2d model
     currentModel = await Live2DModel.from(modelUrl, { autoInteract: false });
-    currentModel.scale.set(0.4);
+    currentModel.scale.set(0.35); // Smaller scale
     currentModel.interactive = true;
     currentModel.anchor.set(0.5, 0.5);
-    currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.8);
+    currentModel.position.set(window.innerWidth * 0.5, window.innerHeight * 0.65); // More centered vertically
 
     // Add events to drag model
     currentModel.on("pointerdown", (e) => {

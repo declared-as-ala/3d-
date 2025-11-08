@@ -2,6 +2,7 @@ import * as Kalidokit from "../dist";
 //Import Helper Functions from Kalidokit
 const remap = Kalidokit.Utils.remap;
 const clamp = Kalidokit.Utils.clamp;
+
 const lerp = Kalidokit.Vector.lerp;
 
 /* THREEJS WORLD SETUP */
@@ -10,26 +11,54 @@ let currentVrm;
 // renderer
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for mobile performance
 document.body.appendChild(renderer.domElement);
 
 // camera
 const orbitCamera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 1000);
-orbitCamera.position.set(0.0, 1.4, 0.7);
+orbitCamera.position.set(0.0, 1.0, 2.0); // Further back to make model appear smaller
+
+// Handle window resize for mobile responsiveness
+window.addEventListener("resize", () => {
+    orbitCamera.aspect = window.innerWidth / window.innerHeight;
+    orbitCamera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+});
 
 // controls
 const orbitControls = new THREE.OrbitControls(orbitCamera, renderer.domElement);
 orbitControls.screenSpacePanning = true;
-orbitControls.target.set(0.0, 1.4, 0.0);
+orbitControls.target.set(0.0, 1.0, 0.0); // Adjusted for centering
 orbitControls.update();
+
+// Enable touch controls for mobile
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.05;
 
 // scene
 const scene = new THREE.Scene();
+
+// Add background image
+const textureLoader = new THREE.TextureLoader();
+const backgroundTexture = textureLoader.load("./background.jpg", () => {
+    // Set background as scene background
+    scene.background = backgroundTexture;
+}, undefined, (error) => {
+    console.error("Error loading background image:", error);
+    // Fallback to gradient if image fails
+    scene.background = new THREE.Color(0x87CEEB);
+});
 
 // light
 const light = new THREE.DirectionalLight(0xffffff);
 light.position.set(1.0, 1.0, 1.0).normalize();
 scene.add(light);
+
+// Add ambient light for better visibility
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
 
 // Main Render Loop
 const clock = new THREE.Clock();
@@ -41,33 +70,91 @@ function animate() {
         // Update model to render physics
         currentVrm.update(clock.getDelta());
     }
+    
+    // Update orbit controls
+    orbitControls.update();
+    
     renderer.render(scene, orbitCamera);
 }
 animate();
 
 /* VRM CHARACTER SETUP */
 
-// Import Character VRM
-const loader = new THREE.GLTFLoader();
-loader.crossOrigin = "anonymous";
-// Import model from URL, add your own model here
-loader.load(
-    "https://cdn.glitch.com/29e07830-2317-4b15-a044-135e73c7f840%2FAshtra.vrm?v=1630342336981",
-
-    (gltf) => {
+// Function to load VRM model
+function loadVRMModel(fileOrUrl) {
+    const loader = new THREE.GLTFLoader();
+    loader.crossOrigin = "anonymous";
+    
+    // Remove existing model if any
+    if (currentVrm && currentVrm.scene) {
+        scene.remove(currentVrm.scene);
+        currentVrm = null;
+    }
+    
+    const onLoad = (gltf) => {
         THREE.VRMUtils.removeUnnecessaryJoints(gltf.scene);
 
         THREE.VRM.from(gltf).then((vrm) => {
             scene.add(vrm.scene);
             currentVrm = vrm;
             currentVrm.scene.rotation.y = Math.PI; // Rotate model 180deg to face camera
+            currentVrm.scene.scale.set(0.4, 0.4, 0.4); // Make avatar smaller
+            currentVrm.scene.position.set(0, 0.5, 0); // Center and position model lower
+            
+            console.log("VRM model loaded successfully!");
+        }).catch((error) => {
+            console.error("Error processing VRM:", error);
+            alert("Error loading VRM model. Please make sure it's a valid VRM file.");
         });
-    },
+    };
 
-    (progress) => console.log("Loading model...", 100.0 * (progress.loaded / progress.total), "%"),
+    const onProgress = (progress) => {
+        if (progress.total > 0) {
+            console.log("Loading model...", 100.0 * (progress.loaded / progress.total), "%");
+        }
+    };
 
-    (error) => console.error(error)
-);
+    const onError = (error) => {
+        console.error("Error loading model:", error);
+        alert("Error loading VRM model. Please try another file.");
+    };
+
+    // Load from file or URL
+    if (fileOrUrl instanceof File) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                loader.parse(e.target.result, "", onLoad, onError);
+            } catch (error) {
+                onError(error);
+            }
+        };
+        reader.onerror = onError;
+        reader.readAsArrayBuffer(fileOrUrl);
+    } else {
+        loader.load(fileOrUrl, onLoad, onProgress, onError);
+    }
+}
+
+// Load default VRM model
+loadVRMModel("./wolf.vrm");
+
+// Handle file upload
+const vrmUploadInput = document.getElementById("vrm-upload");
+if (vrmUploadInput) {
+    vrmUploadInput.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            if (file.name.toLowerCase().endsWith(".vrm")) {
+                console.log("Loading uploaded VRM file:", file.name);
+                loadVRMModel(file);
+            } else {
+                alert("Please upload a .vrm file");
+                event.target.value = ""; // Reset input
+            }
+        }
+    });
+}
 
 // Animate Rotation Helper function
 const rigRotation = (name, rotation = { x: 0, y: 0, z: 0 }, dampener = 1, lerpAmount = 0.3) => {
@@ -171,7 +258,14 @@ const animateVRM = (vrm, results) => {
             runtime: "mediapipe",
             video: videoElement,
         });
-        rigRotation("Hips", riggedPose.Hips.rotation, 0.7);
+        // Stabilize Hips rotation to prevent unwanted tilting
+        // Only apply Y rotation (left/right), minimize X and Z tilting
+        const stabilizedHipsRotation = {
+            x: clamp(riggedPose.Hips.rotation.x * 0.3, -0.2, 0.2), // Reduce X tilt
+            y: riggedPose.Hips.rotation.y, // Keep Y rotation
+            z: clamp(riggedPose.Hips.rotation.z * 0.3, -0.2, 0.2), // Reduce Z tilt
+        };
+        rigRotation("Hips", stabilizedHipsRotation, 0.7);
         rigPosition(
             "Hips",
             {
@@ -200,12 +294,14 @@ const animateVRM = (vrm, results) => {
     // Animate Hands
     if (leftHandLandmarks) {
         riggedLeftHand = Kalidokit.Hand.solve(leftHandLandmarks, "Left");
-        rigRotation("LeftHand", {
-            // Combine pose rotation Z and hand rotation X Y
-            z: riggedPose.LeftHand.z,
-            y: riggedLeftHand.LeftWrist.y,
-            x: riggedLeftHand.LeftWrist.x,
-        });
+        if (riggedPose) {
+            rigRotation("LeftHand", {
+                // Combine pose rotation Z and hand rotation X Y
+                z: riggedPose.LeftHand.z,
+                y: riggedLeftHand.LeftWrist.y,
+                x: riggedLeftHand.LeftWrist.x,
+            });
+        }
         rigRotation("LeftRingProximal", riggedLeftHand.LeftRingProximal);
         rigRotation("LeftRingIntermediate", riggedLeftHand.LeftRingIntermediate);
         rigRotation("LeftRingDistal", riggedLeftHand.LeftRingDistal);
@@ -224,12 +320,14 @@ const animateVRM = (vrm, results) => {
     }
     if (rightHandLandmarks) {
         riggedRightHand = Kalidokit.Hand.solve(rightHandLandmarks, "Right");
-        rigRotation("RightHand", {
-            // Combine Z axis from pose hand and X/Y axis from hand wrist rotation
-            z: riggedPose.RightHand.z,
-            y: riggedRightHand.RightWrist.y,
-            x: riggedRightHand.RightWrist.x,
-        });
+        if (riggedPose) {
+            rigRotation("RightHand", {
+                // Combine Z axis from pose hand and X/Y axis from hand wrist rotation
+                z: riggedPose.RightHand.z,
+                y: riggedRightHand.RightWrist.y,
+                x: riggedRightHand.RightWrist.x,
+            });
+        }
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
         rigRotation("RightRingIntermediate", riggedRightHand.RightRingIntermediate);
         rigRotation("RightRingDistal", riggedRightHand.RightRingDistal);
