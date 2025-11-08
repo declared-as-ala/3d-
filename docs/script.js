@@ -452,12 +452,86 @@ const drawResults = (results) => {
     });
 };
 
-// Use `Mediapipe` utils to get camera - lower resolution = higher fps
-const camera = new Camera(videoElement, {
-    onFrame: async () => {
-        await holistic.send({ image: videoElement });
-    },
-    width: 640,
-    height: 480,
-});
-camera.start();
+// Camera setup - wait for user interaction
+let camera = null;
+let cameraStarted = false;
+
+function startCamera() {
+    if (cameraStarted) {
+        return;
+    }
+
+    try {
+        // Use `Mediapipe` utils to get camera - lower resolution = higher fps
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await holistic.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480,
+        });
+        
+        camera.start()
+            .then(() => {
+                cameraStarted = true;
+                // Hide the start camera button
+                const startButton = document.getElementById("start-camera");
+                if (startButton) {
+                    startButton.classList.add("hidden");
+                }
+                console.log("Camera started successfully");
+            })
+            .catch((error) => {
+                console.error("Camera error:", error);
+                showCameraError(error);
+            });
+    } catch (error) {
+        console.error("Failed to initialize camera:", error);
+        showCameraError(error);
+    }
+}
+
+function showCameraError(error) {
+    // Remove existing error message if any
+    const existingError = document.querySelector(".camera-error");
+    if (existingError) {
+        existingError.remove();
+    }
+
+    // Create error message
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "camera-error";
+    
+    let errorMessage = "Camera access denied. ";
+    if (error.name === "NotAllowedError" || error.message?.includes("Permission denied")) {
+        errorMessage += "Please allow camera access in your browser settings and click 'Start Camera' again.";
+    } else if (error.name === "NotFoundError" || error.message?.includes("not found")) {
+        errorMessage += "No camera found. Please connect a camera device.";
+    } else {
+        errorMessage += "Please check your camera settings and try again.";
+    }
+    
+    errorDiv.textContent = errorMessage;
+    document.body.appendChild(errorDiv);
+
+    // Show start button again
+    const startButton = document.getElementById("start-camera");
+    if (startButton) {
+        startButton.classList.remove("hidden");
+    }
+
+    // Remove error after 5 seconds
+    setTimeout(() => {
+        if (errorDiv.parentNode) {
+            errorDiv.remove();
+        }
+    }, 5000);
+}
+
+// Add click handler to start camera button
+const startCameraButton = document.getElementById("start-camera");
+if (startCameraButton) {
+    startCameraButton.addEventListener("click", () => {
+        startCamera();
+    });
+}
