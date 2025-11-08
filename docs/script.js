@@ -114,6 +114,18 @@ function animate() {
             // Rotate when tracking is enabled but no tracking detected (waiting)
             currentVrm.scene.rotation.y += idleRotationSpeed * delta;
         }
+        
+        // Push cubes with hands when tracking is active
+        if (isTrackingEnabled && isTrackingActive) {
+            pushCubesWithHands();
+            
+            // Animate cubes (rotation) even when being pushed
+            interactiveCubes.forEach(cube => {
+                cube.rotation.x += cube.userData.rotationSpeed.x;
+                cube.rotation.y += cube.userData.rotationSpeed.y;
+                cube.rotation.z += cube.userData.rotationSpeed.z;
+            });
+        }
     }
     
     // Update orbit controls
@@ -381,6 +393,10 @@ function createInteractiveCubes() {
             y: (Math.random() - 0.5) * 0.02,
             z: (Math.random() - 0.5) * 0.02
         };
+        // Physics properties for hand interaction
+        cube.userData.velocity = new THREE.Vector3(0, 0, 0);
+        cube.userData.mass = 1;
+        cube.userData.damping = 0.9; // Friction
         scene.add(cube);
         interactiveCubes.push(cube);
     });
@@ -659,6 +675,9 @@ const animateVRM = (vrm, results) => {
         rigRotation("RightLowerLeg", riggedPose.RightLowerLeg, 1, 0.3);
     }
 
+    // Update hand positions for cube interaction
+    updateHandPositions(results, riggedPose, null, null);
+
     // Animate Hands
     if (leftHandLandmarks) {
         riggedLeftHand = Kalidokit.Hand.solve(leftHandLandmarks, "Left");
@@ -670,6 +689,8 @@ const animateVRM = (vrm, results) => {
             x: riggedLeftHand.LeftWrist.x,
         });
         }
+        // Update left hand position for cube interaction
+        updateHandPositions(results, riggedPose, riggedLeftHand, null);
         rigRotation("LeftRingProximal", riggedLeftHand.LeftRingProximal);
         rigRotation("LeftRingIntermediate", riggedLeftHand.LeftRingIntermediate);
         rigRotation("LeftRingDistal", riggedLeftHand.LeftRingDistal);
@@ -696,6 +717,8 @@ const animateVRM = (vrm, results) => {
             x: riggedRightHand.RightWrist.x,
         });
         }
+        // Update right hand position for cube interaction
+        updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand);
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
         rigRotation("RightRingIntermediate", riggedRightHand.RightRingIntermediate);
         rigRotation("RightRingDistal", riggedRightHand.RightRingDistal);
@@ -855,8 +878,11 @@ camera.start();
         currentVrm.scene.rotation.y = Math.PI; // Reset to face camera
     }
     
-    // Remove interactive cubes when tracking starts
-    removeInteractiveCubes();
+    // Keep cubes visible but make them interactive with hands
+    // Don't remove cubes, just enable hand interaction
+    if (interactiveCubes.length === 0 && currentVrm) {
+        createInteractiveCubes();
+    }
     
     // Update button
     const toggleButton = document.getElementById("tracking-toggle");
@@ -894,6 +920,103 @@ function stopTracking() {
     }
     
     console.log("Tracking stopped - Interactive mode activated");
+}
+
+// Hand position tracking for cube interaction
+let leftHandWorldPos = null;
+let rightHandWorldPos = null;
+const HAND_PUSH_DISTANCE = 0.5; // Distance threshold for pushing cubes
+const HAND_PUSH_FORCE = 0.3; // Force applied to cubes
+
+// Convert hand position from tracking to world coordinates
+function updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand) {
+    if (!riggedPose) {
+        leftHandWorldPos = null;
+        rightHandWorldPos = null;
+        return;
+    }
+    
+    // Get hand positions relative to hips (from pose)
+    // MediaPipe provides hand positions relative to the body
+    if (riggedLeftHand && riggedPose.LeftHand) {
+        // Convert hand position to world space
+        // Left hand position from pose (already in world space relative to hips)
+        const handX = riggedPose.LeftHand.x;
+        const handY = riggedPose.LeftHand.y + 1; // Add hip height
+        const handZ = -riggedPose.LeftHand.z; // Reverse Z
+        
+        leftHandWorldPos = new THREE.Vector3(handX, handY, handZ);
+    } else {
+        leftHandWorldPos = null;
+    }
+    
+    if (riggedRightHand && riggedPose.RightHand) {
+        // Right hand position from pose
+        const handX = riggedPose.RightHand.x;
+        const handY = riggedPose.RightHand.y + 1; // Add hip height
+        const handZ = -riggedPose.RightHand.z; // Reverse Z
+        
+        rightHandWorldPos = new THREE.Vector3(handX, handY, handZ);
+    } else {
+        rightHandWorldPos = null;
+    }
+}
+
+// Apply force to cubes when hand is near
+function pushCubesWithHands() {
+    if (!isTrackingEnabled) return; // Only when tracking is active
+    
+    interactiveCubes.forEach(cube => {
+        let totalForce = new THREE.Vector3(0, 0, 0);
+        let hasForce = false;
+        
+        // Check left hand
+        if (leftHandWorldPos) {
+            const distance = cube.position.distanceTo(leftHandWorldPos);
+            if (distance < HAND_PUSH_DISTANCE && distance > 0.01) {
+                const direction = new THREE.Vector3().subVectors(cube.position, leftHandWorldPos).normalize();
+                const force = HAND_PUSH_FORCE * (1 - distance / HAND_PUSH_DISTANCE);
+                totalForce.add(direction.multiplyScalar(force));
+                hasForce = true;
+            }
+        }
+        
+        // Check right hand
+        if (rightHandWorldPos) {
+            const distance = cube.position.distanceTo(rightHandWorldPos);
+            if (distance < HAND_PUSH_DISTANCE && distance > 0.01) {
+                const direction = new THREE.Vector3().subVectors(cube.position, rightHandWorldPos).normalize();
+                const force = HAND_PUSH_FORCE * (1 - distance / HAND_PUSH_DISTANCE);
+                totalForce.add(direction.multiplyScalar(force));
+                hasForce = true;
+            }
+        }
+        
+        // Apply force to cube velocity
+        if (hasForce) {
+            cube.userData.velocity.add(totalForce);
+        }
+        
+        // Apply damping (friction)
+        cube.userData.velocity.multiplyScalar(cube.userData.damping);
+        
+        // Update cube position based on velocity
+        cube.position.add(cube.userData.velocity);
+        
+        // Add slight gravity
+        cube.userData.velocity.y -= 0.01;
+        
+        // Keep cubes above ground
+        if (cube.position.y < 0.2) {
+            cube.position.y = 0.2;
+            cube.userData.velocity.y *= -0.5; // Bounce
+        }
+        
+        // Limit velocity to prevent cubes from flying away
+        if (cube.userData.velocity.length() > 0.5) {
+            cube.userData.velocity.normalize().multiplyScalar(0.5);
+        }
+    });
 }
 
 // Setup tracking toggle button (wait for DOM to be ready)
