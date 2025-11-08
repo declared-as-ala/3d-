@@ -998,17 +998,16 @@ function avatarPushCubes(delta) {
         const relativePos = new THREE.Vector3().subVectors(cube.position, avatarPos);
         const distance = relativePos.length();
         
-        // Check if cube is close enough (any direction - more permissive)
+        // Check if cube is close enough (any direction - very permissive)
         if (distance < AVATAR_PUSH_DISTANCE && distance > 0.05) {
             const normalizedRel = relativePos.clone().normalize();
             
-            // Accept cubes from any direction, but prioritize those not directly in front
-            // Directly in front would be: z < -0.5 (cube is in front of avatar)
-            // We want cubes behind (z > 0) or to the sides (large |x|)
-            const isInFront = relativePos.z < -0.3 && Math.abs(relativePos.x) < 0.3;
+            // Accept cubes from ANY direction (very permissive)
+            // Only exclude cubes that are very far in front (z < -0.5)
+            const isVeryFarInFront = relativePos.z < -0.5 && Math.abs(relativePos.x) < 0.2;
             
-            // Accept cube if it's not directly in front, or if it's very close
-            if (!isInFront || distance < AVATAR_PUSH_DISTANCE * 0.7) {
+            // Accept cube if it's not very far in front, or if it's very close
+            if (!isVeryFarInFront || distance < AVATAR_PUSH_DISTANCE * 0.5) {
                 if (distance < closestDistance) {
                     closestDistance = distance;
                     closestCube = cube;
@@ -1017,13 +1016,13 @@ function avatarPushCubes(delta) {
                     // Determine which arm to use based on cube position
                     // Left side: positive X
                     // Right side: negative X
-                    useLeftArm = relativePos.x > 0.05; // Cube on left side
-                    useRightArm = relativePos.x < -0.05; // Cube on right side
+                    useLeftArm = relativePos.x > 0; // Cube on left side (any positive X)
+                    useRightArm = relativePos.x < 0; // Cube on right side (any negative X)
                     
-                    // If cube is directly behind or center, choose based on which side is closer
-                    if (!useLeftArm && !useRightArm) {
-                        useRightArm = relativePos.x < 0;
-                        useLeftArm = !useRightArm;
+                    // If cube is directly center (x ≈ 0), use right arm by default
+                    if (Math.abs(relativePos.x) < 0.1) {
+                        useRightArm = true;
+                        useLeftArm = false;
                     }
                 }
             }
@@ -1091,8 +1090,8 @@ function avatarPushCubes(delta) {
         avatarPushAnimation.rightArm.targetRotation = { x: 0, y: 0, z: 0 };
     }
     
-    // Smoothly animate arm rotations
-    const lerpSpeed = 0.15; // Faster interpolation for more responsive movement
+    // Smoothly animate arm rotations (always apply, even when no cube is close)
+    const lerpSpeed = 0.2; // Faster interpolation for more responsive movement
     ['leftArm', 'rightArm'].forEach(arm => {
         const armData = avatarPushAnimation[arm];
         armData.currentRotation.x = lerp(armData.currentRotation.x, armData.targetRotation.x, lerpSpeed);
@@ -1103,28 +1102,29 @@ function avatarPushCubes(delta) {
         if (!isTrackingEnabled && currentVrm) {
             if (arm === 'leftArm') {
                 // Apply rotation with higher lerp amount for immediate response
+                // Use direct quaternion setting for more immediate effect
                 rigRotation("LeftUpperArm", {
                     x: armData.currentRotation.x,
                     y: armData.currentRotation.y,
                     z: armData.currentRotation.z
-                }, 1, 0.8); // Higher lerp = more immediate
+                }, 1, 0.9); // Very high lerp = almost immediate
                 rigRotation("LeftLowerArm", {
-                    x: armData.currentRotation.x * 0.7,
-                    y: armData.currentRotation.y * 0.4,
-                    z: armData.currentRotation.z * 0.3
-                }, 1, 0.8);
+                    x: armData.currentRotation.x * 0.8,
+                    y: armData.currentRotation.y * 0.5,
+                    z: armData.currentRotation.z * 0.4
+                }, 1, 0.9);
             } else {
                 // Apply rotation with higher lerp amount for immediate response
                 rigRotation("RightUpperArm", {
                     x: armData.currentRotation.x,
                     y: armData.currentRotation.y,
                     z: armData.currentRotation.z
-                }, 1, 0.8); // Higher lerp = more immediate
+                }, 1, 0.9); // Very high lerp = almost immediate
                 rigRotation("RightLowerArm", {
-                    x: armData.currentRotation.x * 0.7,
-                    y: armData.currentRotation.y * 0.4,
-                    z: armData.currentRotation.z * 0.3
-                }, 1, 0.8);
+                    x: armData.currentRotation.x * 0.8,
+                    y: armData.currentRotation.y * 0.5,
+                    z: armData.currentRotation.z * 0.4
+                }, 1, 0.9);
             }
         }
     });
