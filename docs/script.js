@@ -1,41 +1,20 @@
-// Import Kalidokit - use UMD build from CDN (works everywhere) or local dist
-// Wait for DOM and Kalidokit to be ready
+// Import Kalidokit - use UMD build from CDN (works everywhere)
+// The CDN is loaded in index.html, so it should be available as window.Kalidokit
 let Kalidokit;
 
-function getKalidokit() {
-    // First try: UMD build from CDN (loaded in HTML before this script)
-    if (typeof window !== 'undefined' && window.Kalidokit) {
-        return window.Kalidokit;
-    }
-    return null;
-}
-
-// Try to get from global first (CDN)
-Kalidokit = getKalidokit();
-
-// If not available from CDN, try ES module import
-if (!Kalidokit) {
-    try {
-        // Try local dist (for local dev)
-        const module = await import("../dist/index.js");
-        Kalidokit = module;
-    } catch (e) {
-        try {
-            // Try docs/dist (for Vercel after copy:dist)
-            const module = await import("./dist/index.js");
-            Kalidokit = module;
-        } catch (e2) {
-            console.error("Failed to load Kalidokit. Make sure CDN is loaded or dist is built.", e, e2);
-            // Fallback to prevent crashes
-            Kalidokit = {
-                Utils: { remap: (x) => x, clamp: (x, min, max) => Math.max(min, Math.min(max, x)) },
-                Vector: { lerp: (a, b, t) => a + (b - a) * t },
-                Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
-                Pose: { solve: () => ({}) },
-                Hand: { solve: () => ({}) }
-            };
-        }
-    }
+// Get Kalidokit from CDN (loaded in HTML)
+if (typeof window !== 'undefined' && window.Kalidokit) {
+    Kalidokit = window.Kalidokit;
+} else {
+    // Fallback if CDN fails (shouldn't happen, but just in case)
+    console.warn("Kalidokit CDN not loaded. Using fallback. Check your internet connection.");
+    Kalidokit = {
+        Utils: { remap: (x) => x, clamp: (x, min, max) => Math.max(min, Math.min(max, x)) },
+        Vector: { lerp: (a, b, t) => a + (b - a) * t },
+        Face: { solve: () => ({}), stabilizeBlink: (eye) => eye },
+        Pose: { solve: () => ({}) },
+        Hand: { solve: () => ({}) }
+    };
 }
 
 //Import Helper Functions from Kalidokit
