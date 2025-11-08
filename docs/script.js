@@ -31,6 +31,38 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for mobile performance
 document.body.appendChild(renderer.domElement);
 
+// Setup cube interaction event listeners
+renderer.domElement.addEventListener('mousedown', onMouseDown);
+renderer.domElement.addEventListener('mousemove', onMouseMove);
+renderer.domElement.addEventListener('mouseup', onMouseUp);
+renderer.domElement.addEventListener('mouseleave', onMouseUp);
+
+// Touch events for mobile
+renderer.domElement.addEventListener('touchstart', (event) => {
+    event.preventDefault();
+    const touch = event.touches[0];
+    const mouseEvent = new MouseEvent('mousedown', {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    });
+    onMouseDown(mouseEvent);
+});
+
+renderer.domElement.addEventListener('touchmove', (event) => {
+    event.preventDefault();
+    const touch = event.touches[0];
+    const mouseEvent = new MouseEvent('mousemove', {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    });
+    onMouseMove(mouseEvent);
+});
+
+renderer.domElement.addEventListener('touchend', (event) => {
+    event.preventDefault();
+    onMouseUp(event);
+});
+
 // camera
 const orbitCamera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 1000);
 orbitCamera.position.set(0.0, 1.0, 2.0); // Further back to make model appear smaller
@@ -274,19 +306,45 @@ loader.crossOrigin = "anonymous";
     }
 }
 
-// Function to load idle animation (Mixamo format)
+// Animation system for Mixamo animations
+let animationMixer = null;
+let animationActions = [];
+let currentAnimationIndex = 0;
+let animationClips = [];
+
+// Function to load idle animations (Mixamo format)
 function loadIdleAnimation(vrm) {
-    // Example Mixamo animation URL - you can replace this with your own Mixamo animation
+    console.log("Loading Mixamo animations...");
+    
+    // Example Mixamo animation URLs - replace with your own Mixamo animations
     // Mixamo animations are in GLB format with embedded animations
-    const animationUrl = "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r133/examples/models/gltf/Xbot.glb";
+    const animationUrls = [
+        // You can add multiple Mixamo animation URLs here
+        // Example: "https://your-cdn.com/animations/idle.glb",
+        // Example: "https://your-cdn.com/animations/wave.glb",
+        // Example: "https://your-cdn.com/animations/dance.glb",
+    ];
     
-    // Alternative: Use a simple rotation animation if no Mixamo file is available
-    // For now, we'll create a simple idle animation by rotating the model
-    console.log("Loading idle animation...");
+    // For now, we'll use simple rotation and add interactive cubes
+    // When you have Mixamo animations, uncomment and use the code below
     
-    // Start with idle animation (simple rotation)
-    if (!isTrackingActive) {
+    /*
+    const loader = new THREE.GLTFLoader();
+    animationUrls.forEach((url, index) => {
+        loader.load(url, (gltf) => {
+            const clips = gltf.animations;
+            if (clips && clips.length > 0) {
+                animationClips.push(...clips);
+                console.log(`Loaded animation ${index + 1}: ${clips[0].name}`);
+            }
+        });
+    });
+    */
+    
+    // Start with simple rotation animation
+    if (!isTrackingEnabled) {
         startIdleRotation();
+        createInteractiveCubes();
     }
 }
 
@@ -295,6 +353,136 @@ let idleRotationSpeed = 0.5; // radians per second
 function startIdleRotation() {
     // This will be handled in the animate loop
 }
+
+// Function to play Mixamo animation
+function playMixamoAnimation(index) {
+    if (!currentVrm || !animationMixer) return;
+    
+    // Stop current animation
+    animationActions.forEach(action => {
+        if (action.isPlaying()) {
+            action.fadeOut(0.5);
+            action.stop();
+        }
+    });
+    
+    // Play new animation
+    if (animationClips[index] && animationMixer) {
+        const action = animationMixer.clipAction(animationClips[index]);
+        action.reset().fadeIn(0.5).play();
+        animationActions.push(action);
+        currentAnimationIndex = index;
+    }
+}
+
+// Interactive cubes for when tracking is disabled
+let interactiveCubes = [];
+let selectedCube = null;
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+
+function createInteractiveCubes() {
+    // Remove existing cubes
+    interactiveCubes.forEach(cube => scene.remove(cube));
+    interactiveCubes = [];
+    
+    // Create multiple colorful cubes around the model
+    const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+    const positions = [
+        { x: -2, y: 1, z: 0 },
+        { x: 2, y: 1, z: 0 },
+        { x: 0, y: 1, z: -2 },
+        { x: 0, y: 1, z: 2 },
+        { x: -1.5, y: 2, z: -1.5 },
+        { x: 1.5, y: 2, z: 1.5 },
+    ];
+    
+    positions.forEach((pos, index) => {
+        const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: colors[index % colors.length],
+            emissive: colors[index % colors.length],
+            emissiveIntensity: 0.3
+        });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(pos.x, pos.y, pos.z);
+        cube.userData.isInteractive = true;
+        cube.userData.originalPosition = { ...pos };
+        cube.userData.rotationSpeed = {
+            x: (Math.random() - 0.5) * 0.02,
+            y: (Math.random() - 0.5) * 0.02,
+            z: (Math.random() - 0.5) * 0.02
+        };
+        scene.add(cube);
+        interactiveCubes.push(cube);
+    });
+    
+    console.log(`Created ${interactiveCubes.length} interactive cubes`);
+}
+
+function removeInteractiveCubes() {
+    interactiveCubes.forEach(cube => scene.remove(cube));
+    interactiveCubes = [];
+    selectedCube = null;
+}
+
+// Mouse/touch interaction for cubes
+function onMouseDown(event) {
+    if (isTrackingEnabled) return; // Don't interact when tracking is active
+    
+    event.preventDefault();
+    
+    // Calculate mouse position in normalized device coordinates
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    
+    // Update raycaster
+    raycaster.setFromCamera(mouse, orbitCamera);
+    
+    // Check for intersections
+    const intersects = raycaster.intersectObjects(interactiveCubes);
+    
+    if (intersects.length > 0) {
+        selectedCube = intersects[0].object;
+        selectedCube.userData.isDragging = true;
+        
+        // Calculate offset
+        const intersectPoint = intersects[0].point;
+        selectedCube.userData.offset = new THREE.Vector3().subVectors(
+            selectedCube.position,
+            intersectPoint
+        );
+    }
+}
+
+function onMouseMove(event) {
+    if (!selectedCube || !selectedCube.userData.isDragging || isTrackingEnabled) return;
+    
+    event.preventDefault();
+    
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, orbitCamera);
+    
+    // Create a plane at the cube's Y position
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -selectedCube.position.y);
+    const intersectPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(plane, intersectPoint);
+    
+    if (intersectPoint) {
+        selectedCube.position.copy(intersectPoint).add(selectedCube.userData.offset);
+    }
+}
+
+function onMouseUp(event) {
+    if (selectedCube) {
+        selectedCube.userData.isDragging = false;
+        selectedCube = null;
+    }
+}
+
+// Add event listeners for cube interaction (will be set up after renderer is created)
 
 // Load default VRM model
 // Use jsDelivr CDN to serve from GitHub (bypasses Vercel LFS issues)
@@ -646,15 +834,15 @@ function startTracking() {
     // Start camera if not already started
     if (!camera) {
         camera = new Camera(videoElement, {
-            onFrame: async () => {
+    onFrame: async () => {
                 if (isTrackingEnabled) {
-                    await holistic.send({ image: videoElement });
+        await holistic.send({ image: videoElement });
                 }
-            },
-            width: 640,
-            height: 480,
-        });
-        camera.start();
+    },
+    width: 640,
+    height: 480,
+});
+camera.start();
     }
     
     // Stop idle animation
