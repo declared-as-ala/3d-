@@ -31,38 +31,6 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for mobile performance
 document.body.appendChild(renderer.domElement);
 
-// Setup cube interaction event listeners
-renderer.domElement.addEventListener('mousedown', onMouseDown);
-renderer.domElement.addEventListener('mousemove', onMouseMove);
-renderer.domElement.addEventListener('mouseup', onMouseUp);
-renderer.domElement.addEventListener('mouseleave', onMouseUp);
-
-// Touch events for mobile
-renderer.domElement.addEventListener('touchstart', (event) => {
-    event.preventDefault();
-    const touch = event.touches[0];
-    const mouseEvent = new MouseEvent('mousedown', {
-        clientX: touch.clientX,
-        clientY: touch.clientY
-    });
-    onMouseDown(mouseEvent);
-});
-
-renderer.domElement.addEventListener('touchmove', (event) => {
-    event.preventDefault();
-    const touch = event.touches[0];
-    const mouseEvent = new MouseEvent('mousemove', {
-        clientX: touch.clientX,
-        clientY: touch.clientY
-    });
-    onMouseMove(mouseEvent);
-});
-
-renderer.domElement.addEventListener('touchend', (event) => {
-    event.preventDefault();
-    onMouseUp(event);
-});
-
 // camera
 const orbitCamera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 1000);
 orbitCamera.position.set(0.0, 1.0, 2.0); // Further back to make model appear smaller
@@ -482,7 +450,44 @@ function onMouseUp(event) {
     }
 }
 
-// Add event listeners for cube interaction (will be set up after renderer is created)
+// Setup cube interaction event listeners (after functions are defined)
+function setupCubeInteraction() {
+    if (!renderer || !renderer.domElement) return;
+    
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
+    renderer.domElement.addEventListener('mouseleave', onMouseUp);
+
+    // Touch events for mobile
+    renderer.domElement.addEventListener('touchstart', (event) => {
+        event.preventDefault();
+        const touch = event.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        onMouseDown(mouseEvent);
+    });
+
+    renderer.domElement.addEventListener('touchmove', (event) => {
+        event.preventDefault();
+        const touch = event.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        onMouseMove(mouseEvent);
+    });
+
+    renderer.domElement.addEventListener('touchend', (event) => {
+        event.preventDefault();
+        onMouseUp(event);
+    });
+}
+
+// Initialize cube interaction after renderer is ready
+setupCubeInteraction();
 
 // Load default VRM model
 // Use jsDelivr CDN to serve from GitHub (bypasses Vercel LFS issues)
