@@ -366,47 +366,51 @@ function loadIdleAnimation(vrm) {
         loader.load(
             filePath,
             (loaded) => {
-                let clips = [];
-                
-                if (isFBX) {
-                    // FBX format: animations are in the loaded object
-                    if (loaded.animations && loaded.animations.length > 0) {
-                        clips = loaded.animations;
-                    } else if (loaded.animations && loaded.animations.length === 0) {
-                        console.warn(`No animations found in FBX file ${index + 1}`);
+                try {
+                    let clips = [];
+                    
+                    if (isFBX) {
+                        // FBX format: animations are in the loaded object
+                        if (loaded.animations && loaded.animations.length > 0) {
+                            clips = loaded.animations;
+                        } else {
+                            console.warn(`No animations found in FBX file ${index + 1}: ${filePath}`);
+                        }
+                    } else {
+                        // GLB/GLTF format: animations are in gltf.animations
+                        clips = loaded.animations || [];
                     }
-                } else {
-                    // GLB/GLTF format: animations are in gltf.animations
-                    clips = loaded.animations || [];
-                }
-                
-                if (clips.length > 0) {
-                    // Try to retarget animations to VRM skeleton
-                    clips.forEach(clip => {
-                        try {
-                            // Retarget animation to VRM skeleton
-                            const retargetedClip = THREE.VRMUtils.retargetAnimation ? 
-                                THREE.VRMUtils.retargetAnimation(clip, vrm) : clip;
-                            
-                            if (retargetedClip) {
-                                animationClips.push(retargetedClip);
-                                animationNames.push(clip.name || `Animation_${index + 1}`);
-                                console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
-                            } else {
-                                // Fallback: use original clip
+                    
+                    if (clips.length > 0) {
+                        // Try to retarget animations to VRM skeleton
+                        clips.forEach(clip => {
+                            try {
+                                // Retarget animation to VRM skeleton
+                                const retargetedClip = THREE.VRMUtils.retargetAnimation ? 
+                                    THREE.VRMUtils.retargetAnimation(clip, vrm) : clip;
+                                
+                                if (retargetedClip) {
+                                    animationClips.push(retargetedClip);
+                                    animationNames.push(clip.name || `Animation_${index + 1}`);
+                                    console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
+                                } else {
+                                    // Fallback: use original clip
+                                    animationClips.push(clip);
+                                    animationNames.push(clip.name || `Animation_${index + 1}`);
+                                    console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
+                                }
+                            } catch (error) {
+                                // If retargeting fails, use original clip
+                                console.warn(`Retargeting failed for ${clip.name}, using original:`, error);
                                 animationClips.push(clip);
                                 animationNames.push(clip.name || `Animation_${index + 1}`);
-                                console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
                             }
-                        } catch (error) {
-                            // If retargeting fails, use original clip
-                            console.warn(`Retargeting failed for ${clip.name}, using original:`, error);
-                            animationClips.push(clip);
-                            animationNames.push(clip.name || `Animation_${index + 1}`);
-                        }
-                    });
-                } else {
-                    console.warn(`No animations found in file ${index + 1}: ${filePath}`);
+                        });
+                    } else {
+                        console.warn(`No animations found in file ${index + 1}: ${filePath}`);
+                    }
+                } catch (error) {
+                    console.error(`Error processing animation file ${index + 1}:`, error);
                 }
                 
                 animationLoadCount++;
@@ -415,8 +419,24 @@ function loadIdleAnimation(vrm) {
                 if (animationLoadCount === totalAnimationsToLoad) {
                     console.log(`All animations loaded! Total: ${animationClips.length}`);
                     if (!isTrackingEnabled && animationClips.length > 0) {
-                        playMixamoAnimation(0);
-                        console.log(`Playing first animation: ${animationNames[0]}`);
+                        // Use setTimeout to ensure everything is ready
+                        setTimeout(() => {
+                            try {
+                                playMixamoAnimation(0);
+                                console.log(`Playing first animation: ${animationNames[0]}`);
+                            } catch (error) {
+                                console.error("Error playing animation:", error);
+                                // Fallback to simple rotation
+                                startIdleRotation();
+                                createInteractiveCubes();
+                            }
+                        }, 100);
+                    } else if (animationClips.length === 0) {
+                        // No animations loaded, use simple rotation
+                        if (!isTrackingEnabled) {
+                            startIdleRotation();
+                            createInteractiveCubes();
+                        }
                     }
                 }
             },
@@ -489,11 +509,6 @@ function playMixamoAnimation(index) {
         
         // Set animation to loop
         action.setLoop(THREE.LoopRepeat);
-        
-        // Auto-advance to next animation when current one finishes (optional)
-        action.clip.addEventListener('finished', () => {
-            // This will trigger when animation completes (if not looping)
-        });
     }
 }
 
