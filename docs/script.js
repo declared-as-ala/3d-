@@ -675,10 +675,10 @@ const animateVRM = (vrm, results) => {
         rigRotation("RightLowerLeg", riggedPose.RightLowerLeg, 1, 0.3);
     }
 
-    // Update hand positions for cube interaction
-    updateHandPositions(results, riggedPose, null, null);
-
     // Animate Hands
+    let riggedLeftHand = null;
+    let riggedRightHand = null;
+    
     if (leftHandLandmarks) {
         riggedLeftHand = Kalidokit.Hand.solve(leftHandLandmarks, "Left");
         if (riggedPose) {
@@ -689,8 +689,6 @@ const animateVRM = (vrm, results) => {
             x: riggedLeftHand.LeftWrist.x,
         });
         }
-        // Update left hand position for cube interaction
-        updateHandPositions(results, riggedPose, riggedLeftHand, null);
         rigRotation("LeftRingProximal", riggedLeftHand.LeftRingProximal);
         rigRotation("LeftRingIntermediate", riggedLeftHand.LeftRingIntermediate);
         rigRotation("LeftRingDistal", riggedLeftHand.LeftRingDistal);
@@ -717,8 +715,8 @@ const animateVRM = (vrm, results) => {
             x: riggedRightHand.RightWrist.x,
         });
         }
-        // Update right hand position for cube interaction
-        updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand);
+    // Update hand positions for cube interaction (after both hands are processed)
+    updateHandPositions(results, riggedPose, riggedLeftHand, riggedRightHand);
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
         rigRotation("RightRingIntermediate", riggedRightHand.RightRingIntermediate);
         rigRotation("RightRingDistal", riggedRightHand.RightRingDistal);
