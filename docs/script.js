@@ -315,28 +315,20 @@ function loadIdleAnimation(vrm) {
         console.log("Animation mixer initialized");
     }
     
-    // Mixamo animation URLs - Add your own Mixamo GLB animation URLs here
-    // You can download animations from Mixamo.com and host them on:
-    // - GitHub (use jsDelivr CDN)
-    // - Your own server
-    // - Cloud storage (Google Drive, Dropbox, etc.)
-    // Format: Download from Mixamo as "FBX for Unity" or "glTF" format
-    const animationUrls = [
-        // Example URLs (replace with your own):
+    // Mixamo animation files - Support both local files and URLs
+    // Local files: Use relative paths from docs/ folder (e.g., "animations/run.fbx")
+    // URLs: Use full URLs (e.g., "https://cdn.jsdelivr.net/gh/...")
+    const animationFiles = [
+        // Local FBX file
+        "animations/run.fbx",
+        
+        // You can also add URLs here:
         // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/idle.glb",
         // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/wave.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/dance.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/walking.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/jumping.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/running.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/sitting.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/cheering.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/pointing.glb",
-        // "https://cdn.jsdelivr.net/gh/your-username/your-repo@main/animations/clapping.glb",
     ];
     
     // If no animations provided, use simple rotation
-    if (animationUrls.length === 0) {
+    if (animationFiles.length === 0) {
         console.log("No Mixamo animations configured. Using simple rotation animation.");
         if (!isTrackingEnabled) {
             startIdleRotation();
@@ -346,18 +338,37 @@ function loadIdleAnimation(vrm) {
     }
     
     // Load Mixamo animations
-    totalAnimationsToLoad = animationUrls.length;
+    totalAnimationsToLoad = animationFiles.length;
     animationLoadCount = 0;
-    const loader = new THREE.GLTFLoader();
+    const gltfLoader = new THREE.GLTFLoader();
+    const fbxLoader = new THREE.FBXLoader();
     
-    animationUrls.forEach((url, index) => {
-        console.log(`Loading animation ${index + 1}/${totalAnimationsToLoad} from: ${url}`);
+    animationFiles.forEach((filePath, index) => {
+        console.log(`Loading animation ${index + 1}/${totalAnimationsToLoad}: ${filePath}`);
+        
+        // Determine file type and use appropriate loader
+        const isFBX = filePath.toLowerCase().endsWith('.fbx');
+        const isGLB = filePath.toLowerCase().endsWith('.glb') || filePath.toLowerCase().endsWith('.gltf');
+        const loader = isFBX ? fbxLoader : gltfLoader;
         
         loader.load(
-            url,
-            (gltf) => {
-                const clips = gltf.animations;
-                if (clips && clips.length > 0) {
+            filePath,
+            (loaded) => {
+                let clips = [];
+                
+                if (isFBX) {
+                    // FBX format: animations are in the loaded object
+                    if (loaded.animations && loaded.animations.length > 0) {
+                        clips = loaded.animations;
+                    } else if (loaded.animations && loaded.animations.length === 0) {
+                        console.warn(`No animations found in FBX file ${index + 1}`);
+                    }
+                } else {
+                    // GLB/GLTF format: animations are in gltf.animations
+                    clips = loaded.animations || [];
+                }
+                
+                if (clips.length > 0) {
                     // Try to retarget animations to VRM skeleton
                     clips.forEach(clip => {
                         try {
@@ -368,12 +379,12 @@ function loadIdleAnimation(vrm) {
                             if (retargetedClip) {
                                 animationClips.push(retargetedClip);
                                 animationNames.push(clip.name || `Animation_${index + 1}`);
-                                console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`}`);
+                                console.log(`✓ Loaded animation: ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
                             } else {
                                 // Fallback: use original clip
                                 animationClips.push(clip);
                                 animationNames.push(clip.name || `Animation_${index + 1}`);
-                                console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`}`);
+                                console.log(`✓ Loaded animation (no retargeting): ${clip.name || `Animation_${index + 1}`} (${isFBX ? 'FBX' : 'GLB'})`);
                             }
                         } catch (error) {
                             // If retargeting fails, use original clip
@@ -383,7 +394,7 @@ function loadIdleAnimation(vrm) {
                         }
                     });
                 } else {
-                    console.warn(`No animations found in file ${index + 1}`);
+                    console.warn(`No animations found in file ${index + 1}: ${filePath}`);
                 }
                 
                 animationLoadCount++;
@@ -404,7 +415,7 @@ function loadIdleAnimation(vrm) {
                 }
             },
             (error) => {
-                console.error(`Error loading animation ${index + 1} from ${url}:`, error);
+                console.error(`Error loading animation ${index + 1} from ${filePath}:`, error);
                 animationLoadCount++;
                 
                 // Continue even if some animations fail
