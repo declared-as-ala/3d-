@@ -977,7 +977,7 @@ const AVATAR_PUSH_FORCE = 0.4; // Force applied by avatar
 const AVATAR_ARM_REACH = 0.6; // How far avatar can reach
 
 function avatarPushCubes(delta) {
-    if (!currentVrm || !isTrackingEnabled) return; // Only when tracking is disabled
+    if (!currentVrm || isTrackingEnabled) return; // Only when tracking is disabled
     
     // Get avatar position (center of model)
     const avatarPos = new THREE.Vector3(0, 1, 0); // Avatar is at origin, height ~1m
