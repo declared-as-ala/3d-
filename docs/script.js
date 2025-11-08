@@ -86,10 +86,14 @@ function animate() {
     const delta = clock.getDelta();
 
     if (currentVrm) {
-        // Safety check: ensure avatar is still in scene
+        // CRITICAL: Safety check - ensure avatar ALWAYS stays in scene
         if (!scene.children.includes(currentVrm.scene)) {
-            console.warn("Avatar was removed from scene! Re-adding...");
+            console.warn("Avatar was removed from scene! Re-adding immediately...");
             scene.add(currentVrm.scene);
+            // Re-apply position, scale, and rotation
+            currentVrm.scene.position.set(0, 0.5, 0);
+            currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+            currentVrm.scene.rotation.y = Math.PI;
         }
         
         // Update model to render physics
@@ -99,6 +103,15 @@ function animate() {
         if (animationMixer) {
             try {
                 animationMixer.update(delta);
+                
+                // Double-check avatar is still in scene after animation update
+                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                    console.warn("Avatar removed during animation update! Re-adding...");
+                    scene.add(currentVrm.scene);
+                    currentVrm.scene.position.set(0, 0.5, 0);
+                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                    currentVrm.scene.rotation.y = Math.PI;
+                }
             } catch (error) {
                 console.error("Error updating animation mixer:", error);
                 // Stop animations if they cause errors
@@ -108,6 +121,15 @@ function animate() {
                     }
                 });
                 animationActions = [];
+                
+                // Ensure avatar stays in scene even if animation fails
+                if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+                    console.warn("Re-adding avatar after animation error");
+                    scene.add(currentVrm.scene);
+                    currentVrm.scene.position.set(0, 0.5, 0);
+                    currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+                    currentVrm.scene.rotation.y = Math.PI;
+                }
             }
         }
         
@@ -425,12 +447,17 @@ function loadIdleAnimation(vrm) {
                             console.warn(`No animations found in FBX file ${index + 1}: ${filePath}`);
                         }
                     } else if (isDAE) {
-                        // COLLADA (DAE) format: animations are in the scene
-                        // ColladaLoader returns an object with 'scene' and potentially 'animations'
-                        if (loaded.animations && loaded.animations.length > 0) {
-                            clips = loaded.animations;
-                        } else if (loaded.scene && loaded.scene.animations && loaded.scene.animations.length > 0) {
+                        // COLLADA (DAE) format: animations are in scene.animations (new API)
+                        // IMPORTANT: Do NOT add loaded.scene to the scene - we only want the animations!
+                        // ColladaLoader returns an object with 'scene' containing the model and animations
+                        if (loaded.scene && loaded.scene.animations && loaded.scene.animations.length > 0) {
+                            // New API: animations are in scene.animations
                             clips = loaded.scene.animations;
+                            console.log(`Found ${clips.length} animation(s) in DAE scene.animations`);
+                        } else if (loaded.animations && loaded.animations.length > 0) {
+                            // Fallback: old API (deprecated)
+                            clips = loaded.animations;
+                            console.log(`Found ${clips.length} animation(s) in DAE animations (deprecated API)`);
                         } else {
                             // Try to extract animations from the scene hierarchy
                             const extractAnimations = (object) => {
@@ -448,8 +475,14 @@ function loadIdleAnimation(vrm) {
                             clips = extractAnimations(loaded.scene || loaded);
                             if (clips.length === 0) {
                                 console.warn(`No animations found in DAE file ${index + 1}: ${filePath}`);
+                            } else {
+                                console.log(`Extracted ${clips.length} animation(s) from DAE scene hierarchy`);
                             }
                         }
+                        
+                        // IMPORTANT: Don't add the DAE model to the scene - we only want animations!
+                        // The loaded.scene contains a full 3D model that would interfere with the VRM avatar
+                        // We extract only the animation clips and discard the model
                     } else {
                         // GLB/GLTF format: animations are in gltf.animations
                         clips = loaded.animations || [];
@@ -462,9 +495,18 @@ function loadIdleAnimation(vrm) {
                                 // For FBX and DAE files, skip retargeting as they often cause issues
                                 if (isFBX || isDAE) {
                                     // FBX and DAE animations often don't work well with VRM retargeting
-                                    // Use original clip without retargeting
+                                    // DAE animations in particular may not be compatible with VRM skeletons
+                                    // Use original clip without retargeting, but warn about potential issues
                                     const format = isFBX ? 'FBX' : 'DAE';
                                     console.warn(`${format} animation detected. Skipping retargeting for ${clip.name || `Animation_${index + 1}`}`);
+                                    console.warn(`⚠️ ${format} animations may not work correctly with VRM. If avatar disappears, try using GLB format instead.`);
+                                    
+                                    // Check if clip has valid tracks
+                                    if (!clip.tracks || clip.tracks.length === 0) {
+                                        console.error(`Animation clip "${clip.name || `Animation_${index + 1}`}" has no tracks - skipping`);
+                                        return; // Skip this clip
+                                    }
+                                    
                                     animationClips.push(clip);
                                     animationNames.push(clip.name || `Animation_${index + 1}`);
                                     console.log(`✓ Loaded ${format} animation (no retargeting): ${clip.name || `Animation_${index + 1}`}`);
@@ -551,19 +593,23 @@ function startIdleRotation() {
 
 // Function to play Mixamo animation
 function playMixamoAnimation(index) {
-    // Safety check: ensure avatar is still in scene
-    if (!currentVrm || !currentVrm.scene || !scene.children.includes(currentVrm.scene)) {
-        console.warn("Cannot play animation: VRM not in scene");
-        // Try to re-add avatar to scene if it was removed
-        if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
-            console.log("Re-adding avatar to scene...");
-            scene.add(currentVrm.scene);
-        }
+    // CRITICAL: Ensure avatar is ALWAYS in scene before playing animation
+    if (currentVrm && currentVrm.scene && !scene.children.includes(currentVrm.scene)) {
+        console.warn("Avatar not in scene! Re-adding before playing animation...");
+        scene.add(currentVrm.scene);
+        // Re-apply position, scale, and rotation
+        currentVrm.scene.position.set(0, 0.5, 0);
+        currentVrm.scene.scale.set(0.4, 0.4, 0.4);
+        currentVrm.scene.rotation.y = Math.PI;
+    }
+    
+    if (!currentVrm || !currentVrm.scene) {
+        console.error("Cannot play animation: VRM not loaded");
         return;
     }
     
     if (!animationMixer) {
-        console.warn("Cannot play animation: mixer not initialized");
+        console.error("Cannot play animation: mixer not initialized");
         return;
     }
     
