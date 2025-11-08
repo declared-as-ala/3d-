@@ -1786,19 +1786,11 @@ function setupTrackingButton() {
         });
     }
     
-    // Setup button to load Dancing animation manually
-    const loadDancingButton = document.getElementById("load-dancing");
-    if (loadDancingButton) {
-        loadDancingButton.addEventListener("click", () => {
-            loadDancingAnimation();
-        });
-    }
-    
-    // Setup button to load Remy FBX model
-    const loadRemyButton = document.getElementById("load-remy");
-    if (loadRemyButton) {
-        loadRemyButton.addEventListener("click", () => {
-            loadRemyFBX();
+    // Setup button to start animation (load run.fbx on Remy)
+    const startAnimationButton = document.getElementById("start-animation");
+    if (startAnimationButton) {
+        startAnimationButton.addEventListener("click", () => {
+            loadRunAnimation();
         });
     }
 }
@@ -2111,8 +2103,8 @@ function loadDancingAnimation_OLD() {
     );
 }
 
-// Function to load Remy.fbx model and run.fbx animation
-function loadRemyFBX() {
+// Function to load Remy.fbx model (and optionally run.fbx animation)
+function loadRemyFBX(autoLoadAnimation = false) {
     if (typeof THREE.FBXLoader === 'undefined') {
         alert("FBXLoader is not loaded! Please refresh the page.");
         return;
