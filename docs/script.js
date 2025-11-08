@@ -106,8 +106,8 @@ animate();
 
 // Function to load VRM model
 function loadVRMModel(fileOrUrl) {
-    const loader = new THREE.GLTFLoader();
-    loader.crossOrigin = "anonymous";
+const loader = new THREE.GLTFLoader();
+loader.crossOrigin = "anonymous";
     
     // Remove existing model if any
     if (currentVrm && currentVrm.scene) {
@@ -170,18 +170,44 @@ function loadVRMModel(fileOrUrl) {
         };
         reader.readAsArrayBuffer(fileOrUrl);
     } else {
-        // For URLs, ensure proper response type
-        // First, try to fetch the file to check if it exists
-        fetch(fileOrUrl, { method: 'HEAD' })
+        // For URLs, convert relative paths to absolute
+        let url = fileOrUrl;
+        if (url.startsWith('./') || url.startsWith('../')) {
+            // Convert relative path to absolute based on current page location
+            const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+            url = new URL(url, baseUrl).href;
+            console.log(`Converted relative path "${fileOrUrl}" to absolute URL: "${url}"`);
+        }
+        
+        // First, try to fetch the file to check if it exists and get content type
+        fetch(url, { method: 'HEAD' })
             .then(response => {
+                console.log(`File check response: ${response.status} ${response.statusText}`);
+                console.log(`Content-Type: ${response.headers.get('Content-Type')}`);
+                console.log(`Content-Length: ${response.headers.get('Content-Length')}`);
+                
                 if (!response.ok) {
-                    console.error(`File not found: ${fileOrUrl} (Status: ${response.status})`);
-                    onError(new Error(`File not found: ${response.status} ${response.statusText}`));
+                    console.error(`File not found: ${url} (Status: ${response.status})`);
+                    // Try to get the actual response body to see what was returned
+                    return fetch(url, { method: 'GET' })
+                        .then(res => res.text())
+                        .then(text => {
+                            console.error(`Server returned (first 200 chars): ${text.substring(0, 200)}`);
+                            onError(new Error(`File not found: ${response.status} ${response.statusText}`));
+                        });
+                }
+                
+                const contentType = response.headers.get('Content-Type');
+                if (contentType && contentType.includes('text/html')) {
+                    console.error(`Server returned HTML instead of binary file. Content-Type: ${contentType}`);
+                    onError(new Error('Server returned HTML instead of VRM file. File may not be deployed.'));
                     return;
                 }
-                // File exists, proceed with loading
+                
+                // File exists and looks valid, proceed with loading
+                console.log(`Loading VRM file from: ${url}`);
                 loader.load(
-                    fileOrUrl, 
+                    url, 
                     onLoad, 
                     onProgress, 
                     (error) => {
@@ -196,9 +222,10 @@ function loadVRMModel(fileOrUrl) {
             })
             .catch(fetchError => {
                 console.error("Failed to check file existence:", fetchError);
+                console.log(`Attempting to load anyway from: ${url}`);
                 // Try loading anyway (might work despite fetch error)
                 loader.load(
-                    fileOrUrl, 
+                    url, 
                     onLoad, 
                     onProgress, 
                     onError
@@ -366,12 +393,12 @@ const animateVRM = (vrm, results) => {
     if (leftHandLandmarks) {
         riggedLeftHand = Kalidokit.Hand.solve(leftHandLandmarks, "Left");
         if (riggedPose) {
-            rigRotation("LeftHand", {
-                // Combine pose rotation Z and hand rotation X Y
-                z: riggedPose.LeftHand.z,
-                y: riggedLeftHand.LeftWrist.y,
-                x: riggedLeftHand.LeftWrist.x,
-            });
+        rigRotation("LeftHand", {
+            // Combine pose rotation Z and hand rotation X Y
+            z: riggedPose.LeftHand.z,
+            y: riggedLeftHand.LeftWrist.y,
+            x: riggedLeftHand.LeftWrist.x,
+        });
         }
         rigRotation("LeftRingProximal", riggedLeftHand.LeftRingProximal);
         rigRotation("LeftRingIntermediate", riggedLeftHand.LeftRingIntermediate);
@@ -392,12 +419,12 @@ const animateVRM = (vrm, results) => {
     if (rightHandLandmarks) {
         riggedRightHand = Kalidokit.Hand.solve(rightHandLandmarks, "Right");
         if (riggedPose) {
-            rigRotation("RightHand", {
-                // Combine Z axis from pose hand and X/Y axis from hand wrist rotation
-                z: riggedPose.RightHand.z,
-                y: riggedRightHand.RightWrist.y,
-                x: riggedRightHand.RightWrist.x,
-            });
+        rigRotation("RightHand", {
+            // Combine Z axis from pose hand and X/Y axis from hand wrist rotation
+            z: riggedPose.RightHand.z,
+            y: riggedRightHand.RightWrist.y,
+            x: riggedRightHand.RightWrist.x,
+        });
         }
         rigRotation("RightRingProximal", riggedRightHand.RightRingProximal);
         rigRotation("RightRingIntermediate", riggedRightHand.RightRingIntermediate);
