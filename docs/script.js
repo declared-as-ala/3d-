@@ -94,8 +94,12 @@ function animate() {
             idleAnimationMixer.update(delta);
         }
         
-        // Simple idle rotation when tracking is not active
-        if (!isTrackingActive && currentVrm.scene) {
+        // Simple idle rotation when tracking is disabled or not active
+        if (!isTrackingEnabled && currentVrm.scene) {
+            // Rotate continuously when tracking is disabled
+            currentVrm.scene.rotation.y += idleRotationSpeed * delta;
+        } else if (isTrackingEnabled && !isTrackingActive && currentVrm.scene) {
+            // Rotate when tracking is enabled but no tracking detected (waiting)
             currentVrm.scene.rotation.y += idleRotationSpeed * delta;
         }
     }
@@ -132,6 +136,11 @@ loader.crossOrigin = "anonymous";
             
             // Load idle animation (Mixamo format)
             loadIdleAnimation(vrm);
+            
+            // Start with idle animation (tracking disabled by default)
+            if (!isTrackingEnabled && currentVrm.scene) {
+                // Animation will start in the animate loop
+            }
             
             console.log("VRM model loaded successfully!");
         }).catch((error) => {
@@ -344,10 +353,22 @@ const rigFace = (riggedFace) => {
 
     // Simple example without winking. Interpolate based on old blendshape, then stabilize blink with `Kalidokit` helper function.
     // for VRM, 1 is closed, 0 is open.
-    riggedFace.eye.l = lerp(clamp(1 - riggedFace.eye.l, 0, 1), Blendshape.getValue(PresetName.Blink), 0.5);
-    riggedFace.eye.r = lerp(clamp(1 - riggedFace.eye.r, 0, 1), Blendshape.getValue(PresetName.Blink), 0.5);
-    riggedFace.eye = Kalidokit.Face.stabilizeBlink(riggedFace.eye, riggedFace.head.y);
-    Blendshape.setValue(PresetName.Blink, riggedFace.eye.l);
+        // Fix: Ensure eyes stay open by clamping the eye values properly
+        const eyeL = clamp(riggedFace.eye.l, 0, 1); // Keep between 0 and 1
+        const eyeR = clamp(riggedFace.eye.r, 0, 1);
+        
+        // Convert to VRM format (1 = closed, 0 = open), but keep eyes mostly open
+        const vrmEyeL = lerp(clamp(1 - eyeL, 0, 1), Blendshape.getValue(PresetName.Blink), 0.5);
+        const vrmEyeR = lerp(clamp(1 - eyeR, 0, 1), Blendshape.getValue(PresetName.Blink), 0.5);
+        
+        // Stabilize blink to prevent eyes from closing unexpectedly
+        const stabilizedEyes = Kalidokit.Face.stabilizeBlink(
+            { l: vrmEyeL, r: vrmEyeR },
+            riggedFace.head.y
+        );
+        
+        // Ensure eyes don't close completely (keep at least 0.1 open)
+        Blendshape.setValue(PresetName.Blink, Math.max(0, Math.min(0.9, stabilizedEyes.l)));
 
     // Interpolate and set mouth blendshapes
     Blendshape.setValue(PresetName.I, lerp(riggedFace.mouth.shape.I, Blendshape.getValue(PresetName.I), 0.5));
@@ -493,6 +514,11 @@ let videoElement = document.querySelector(".input_video"),
     guideCanvas = document.querySelector("canvas.guides");
 
 const onResults = (results) => {
+    // Only process if tracking is enabled
+    if (!isTrackingEnabled) {
+        return;
+    }
+    
     // Check if we have valid tracking data
     const hasTracking = results.poseLandmarks && results.poseLandmarks.length > 0;
     
@@ -524,7 +550,7 @@ const onResults = (results) => {
     // Draw landmark guides
     drawResults(results);
     // Animate model (only if tracking is active)
-    if (isTrackingActive) {
+    if (isTrackingActive && isTrackingEnabled) {
     animateVRM(currentVrm, results);
     }
 };
@@ -590,20 +616,84 @@ const drawResults = (results) => {
 };
 
 // Animation state
-let isTrackingActive = false;
+let isTrackingEnabled = false; // User-controlled tracking state
+let isTrackingActive = false; // Actual tracking detection state
 let idleAnimationMixer = null;
 let idleAnimationAction = null;
 let lastTrackingTime = 0;
 const TRACKING_TIMEOUT = 2000; // 2 seconds without tracking = idle
+let camera = null;
 
-// Use `Mediapipe` utils to get camera - lower resolution = higher fps
-// Camera starts automatically but tracking can be inactive
-const camera = new Camera(videoElement, {
+// Function to start tracking
+function startTracking() {
+    if (isTrackingEnabled) return; // Already started
+    
+    isTrackingEnabled = true;
+    isTrackingActive = false;
+    
+    // Start camera if not already started
+    if (!camera) {
+        camera = new Camera(videoElement, {
     onFrame: async () => {
+                if (isTrackingEnabled) {
         await holistic.send({ image: videoElement });
+                }
     },
     width: 640,
     height: 480,
 });
-// Camera starts automatically - no button needed
 camera.start();
+    }
+    
+    // Stop idle animation
+    if (currentVrm && currentVrm.scene) {
+        currentVrm.scene.rotation.y = Math.PI; // Reset to face camera
+    }
+    
+    // Update button
+    const toggleButton = document.getElementById("tracking-toggle");
+    if (toggleButton) {
+        toggleButton.textContent = "Stop Tracking";
+        toggleButton.style.background = "#e74c3c";
+    }
+    
+    console.log("Tracking started");
+}
+
+// Function to stop tracking
+function stopTracking() {
+    if (!isTrackingEnabled) return; // Already stopped
+    
+    isTrackingEnabled = false;
+    isTrackingActive = false;
+    
+    // Stop camera
+    if (camera) {
+        camera.stop();
+        camera = null;
+    }
+    
+    // Start idle animation (rotation)
+    // Animation will be handled in the animate loop
+    
+    // Update button
+    const toggleButton = document.getElementById("tracking-toggle");
+    if (toggleButton) {
+        toggleButton.textContent = "Start Tracking";
+        toggleButton.style.background = "#13a3f3";
+    }
+    
+    console.log("Tracking stopped");
+}
+
+// Setup tracking toggle button
+const trackingToggleButton = document.getElementById("tracking-toggle");
+if (trackingToggleButton) {
+    trackingToggleButton.addEventListener("click", () => {
+        if (isTrackingEnabled) {
+            stopTracking();
+        } else {
+            startTracking();
+        }
+    });
+}
