@@ -979,32 +979,51 @@ const AVATAR_ARM_REACH = 0.6; // How far avatar can reach
 function avatarPushCubes(delta) {
     if (!currentVrm || isTrackingEnabled) return; // Only when tracking is disabled
     
-    // Get avatar position (center of model)
-    const avatarPos = new THREE.Vector3(0, 1, 0); // Avatar is at origin, height ~1m
+    if (interactiveCubes.length === 0) return; // No cubes to interact with
     
-    // Find closest cube behind or to the side of avatar
+    // Get avatar position (center of model, accounting for rotation)
+    // Avatar is rotated 180° (Math.PI) to face camera, so forward is -Z
+    const avatarPos = new THREE.Vector3(0, 1, 0); // Avatar is at origin, height ~1m
+    const avatarForward = new THREE.Vector3(0, 0, -1); // Avatar faces -Z (towards camera)
+    
+    // Find closest cube near avatar (any direction, but prioritize behind/sides)
     let closestCube = null;
     let closestDistance = Infinity;
     let closestDirection = null;
+    let useLeftArm = false;
+    let useRightArm = false;
     
     interactiveCubes.forEach(cube => {
         // Calculate relative position from avatar
         const relativePos = new THREE.Vector3().subVectors(cube.position, avatarPos);
         const distance = relativePos.length();
         
-        // Check if cube is close enough and behind/side of avatar
-        // Behind means negative Z (avatar faces forward in -Z direction after rotation)
-        if (distance < AVATAR_PUSH_DISTANCE && distance > 0.1) {
-            // Check if cube is behind or to the side (not directly in front)
-            const angle = Math.atan2(relativePos.x, relativePos.z);
-            const absAngle = Math.abs(angle);
+        // Check if cube is close enough (any direction)
+        if (distance < AVATAR_PUSH_DISTANCE && distance > 0.05) {
+            // Calculate if cube is behind avatar (dot product with forward)
+            const normalizedRel = relativePos.clone().normalize();
+            const dotProduct = normalizedRel.dot(avatarForward);
             
-            // Consider cubes behind (angle > 90°) or to the sides
-            if (absAngle > Math.PI / 3 || relativePos.z > 0) { // Behind or side
+            // Prioritize cubes behind or to the sides (not directly in front)
+            // Behind means dot product is positive (since forward is -Z)
+            // Or cube is to the side (large X component)
+            const isBehind = dotProduct > -0.3 || Math.abs(relativePos.x) > Math.abs(relativePos.z);
+            
+            if (isBehind || distance < AVATAR_PUSH_DISTANCE * 0.6) {
                 if (distance < closestDistance) {
                     closestDistance = distance;
                     closestCube = cube;
-                    closestDirection = relativePos.normalize();
+                    closestDirection = normalizedRel;
+                    
+                    // Determine which arm to use
+                    useLeftArm = relativePos.x > 0.1; // Cube on left side
+                    useRightArm = relativePos.x < -0.1; // Cube on right side
+                    
+                    // If cube is directly behind, use both arms or closest one
+                    if (!useLeftArm && !useRightArm) {
+                        useRightArm = relativePos.x < 0;
+                        useLeftArm = !useRightArm;
+                    }
                 }
             }
         }
@@ -1014,81 +1033,91 @@ function avatarPushCubes(delta) {
     if (closestCube) {
         avatarPushAnimation.isPushing = true;
         
-        // Determine which arm to use based on cube position
-        const useLeftArm = closestDirection.x > 0; // Cube on left side
-        const useRightArm = closestDirection.x < 0; // Cube on right side
-        
         // Calculate arm rotation to reach the cube
-        const armDirection = closestDirection.clone();
-        armDirection.y = Math.max(0, armDirection.y); // Keep arm at reasonable height
+        const relativePos = new THREE.Vector3().subVectors(closestCube.position, avatarPos);
+        const distance = relativePos.length();
+        const normalized = relativePos.clone().normalize();
+        
+        // Calculate angles for arm rotation
+        const armRaiseAngle = Math.max(0, Math.min(Math.PI * 0.5, Math.asin(normalized.y)));
+        const armSideAngle = Math.atan2(normalized.x, -normalized.z); // Side angle
+        const armForwardAngle = Math.max(0, Math.min(Math.PI * 0.3, Math.acos(Math.abs(normalized.z))));
         
         if (useLeftArm) {
-            // Left arm: extend outward and slightly forward
+            // Left arm: extend to reach cube
             avatarPushAnimation.leftArm.targetRotation = {
-                x: Math.PI * 0.3, // Raise arm
-                y: Math.PI * 0.4, // Extend to side
-                z: -Math.PI * 0.2 // Rotate forward
+                x: armRaiseAngle, // Raise arm based on cube height
+                y: Math.max(0, armSideAngle), // Extend to side
+                z: -armForwardAngle * 0.5 // Rotate forward
             };
+            avatarPushAnimation.rightArm.targetRotation = { x: 0, y: 0, z: 0 }; // Keep right arm at rest
         } else if (useRightArm) {
-            // Right arm: extend outward and slightly forward
+            // Right arm: extend to reach cube
             avatarPushAnimation.rightArm.targetRotation = {
-                x: Math.PI * 0.3, // Raise arm
-                y: -Math.PI * 0.4, // Extend to side
-                z: -Math.PI * 0.2 // Rotate forward
+                x: armRaiseAngle, // Raise arm based on cube height
+                y: Math.min(0, armSideAngle), // Extend to side
+                z: -armForwardAngle * 0.5 // Rotate forward
             };
+            avatarPushAnimation.leftArm.targetRotation = { x: 0, y: 0, z: 0 }; // Keep left arm at rest
         }
         
-        // Apply force to cube
-        const pushForce = AVATAR_PUSH_FORCE * (1 - closestDistance / AVATAR_PUSH_DISTANCE);
-        const pushDirection = closestDirection.clone();
+        // Apply force to cube (push away from avatar)
+        const pushForce = AVATAR_PUSH_FORCE * (1 - distance / AVATAR_PUSH_DISTANCE);
+        const pushDirection = normalized.clone();
         pushDirection.y = 0; // Push horizontally
         pushDirection.normalize();
         
-        closestCube.userData.velocity.add(pushDirection.multiplyScalar(pushForce * delta * 60));
-        closestCube.userData.isBeingPushed = true;
+        if (pushDirection.length() > 0) {
+            closestCube.userData.velocity.add(pushDirection.multiplyScalar(pushForce * delta * 60));
+            closestCube.userData.isBeingPushed = true;
+        }
         
         // Reset flag after a short delay
         setTimeout(() => {
-            closestCube.userData.isBeingPushed = false;
+            if (closestCube) {
+                closestCube.userData.isBeingPushed = false;
+            }
         }, 100);
     } else {
-        // Return arms to rest position
+        // Return arms to rest position smoothly
         avatarPushAnimation.isPushing = false;
         avatarPushAnimation.leftArm.targetRotation = { x: 0, y: 0, z: 0 };
         avatarPushAnimation.rightArm.targetRotation = { x: 0, y: 0, z: 0 };
     }
     
     // Smoothly animate arm rotations
-    const lerpSpeed = 0.1;
+    const lerpSpeed = 0.15; // Faster interpolation for more responsive movement
     ['leftArm', 'rightArm'].forEach(arm => {
         const armData = avatarPushAnimation[arm];
         armData.currentRotation.x = lerp(armData.currentRotation.x, armData.targetRotation.x, lerpSpeed);
         armData.currentRotation.y = lerp(armData.currentRotation.y, armData.targetRotation.y, lerpSpeed);
         armData.currentRotation.z = lerp(armData.currentRotation.z, armData.targetRotation.z, lerpSpeed);
         
-        // Apply rotation to avatar arms
-        if (arm === 'leftArm') {
-            rigRotation("LeftUpperArm", {
-                x: armData.currentRotation.x,
-                y: armData.currentRotation.y,
-                z: armData.currentRotation.z
-            }, 1, 1);
-            rigRotation("LeftLowerArm", {
-                x: armData.currentRotation.x * 0.5,
-                y: 0,
-                z: 0
-            }, 1, 1);
-        } else {
-            rigRotation("RightUpperArm", {
-                x: armData.currentRotation.x,
-                y: armData.currentRotation.y,
-                z: armData.currentRotation.z
-            }, 1, 1);
-            rigRotation("RightLowerArm", {
-                x: armData.currentRotation.x * 0.5,
-                y: 0,
-                z: 0
-            }, 1, 1);
+        // Apply rotation to avatar arms (only when tracking is disabled)
+        if (!isTrackingEnabled && currentVrm) {
+            if (arm === 'leftArm') {
+                rigRotation("LeftUpperArm", {
+                    x: armData.currentRotation.x,
+                    y: armData.currentRotation.y,
+                    z: armData.currentRotation.z
+                }, 1, 1);
+                rigRotation("LeftLowerArm", {
+                    x: armData.currentRotation.x * 0.6,
+                    y: armData.currentRotation.y * 0.3,
+                    z: 0
+                }, 1, 1);
+            } else {
+                rigRotation("RightUpperArm", {
+                    x: armData.currentRotation.x,
+                    y: armData.currentRotation.y,
+                    z: armData.currentRotation.z
+                }, 1, 1);
+                rigRotation("RightLowerArm", {
+                    x: armData.currentRotation.x * 0.6,
+                    y: armData.currentRotation.y * 0.3,
+                    z: 0
+                }, 1, 1);
+            }
         }
     });
     
