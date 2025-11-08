@@ -154,20 +154,87 @@ loader.crossOrigin = "anonymous";
         };
         reader.readAsArrayBuffer(fileOrUrl);
     } else {
-        // For URLs, ensure proper response type
-        loader.load(
-            fileOrUrl, 
-            onLoad, 
-            onProgress, 
-            (error) => {
-                console.error("Loader error details:", error);
-                // Check if it's a 404 or HTML response
-                if (error && error.message && error.message.includes("JSON")) {
-                    console.error("Possible 404 - file not found or server returned HTML instead of binary");
+        // For URLs, convert relative paths to absolute
+        let url = fileOrUrl;
+        if (url.startsWith('./') || url.startsWith('../')) {
+            // Convert relative path to absolute based on current page location
+            const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+            url = new URL(url, baseUrl).href;
+            console.log(`Converted relative path "${fileOrUrl}" to absolute URL: "${url}"`);
+        }
+        
+        // Use fetch with arrayBuffer to have better control and detect HTML responses
+        console.log(`Fetching VRM file from: ${url}`);
+        fetch(url)
+            .then(response => {
+                console.log(`Response status: ${response.status} ${response.statusText}`);
+                console.log(`Content-Type: ${response.headers.get('Content-Type')}`);
+                const contentLength = response.headers.get('Content-Length');
+                console.log(`Content-Length header: ${contentLength}`);
+                
+                if (!response.ok) {
+                    console.error(`File not found: ${url} (Status: ${response.status})`);
+                    return response.text().then(text => {
+                        console.error(`Server returned (first 500 chars): ${text.substring(0, 500)}`);
+                        onError(new Error(`File not found: ${response.status} ${response.statusText}`));
+                    });
                 }
-                onError(error);
-            }
-        );
+                
+                // Check Content-Type
+                const contentType = response.headers.get('Content-Type');
+                if (contentType && contentType.includes('text/html')) {
+                    console.error(`Server returned HTML instead of binary file. Content-Type: ${contentType}`);
+                    return response.text().then(text => {
+                        console.error(`HTML content (first 500 chars): ${text.substring(0, 500)}`);
+                        onError(new Error('Server returned HTML instead of VRM file. File may not be deployed.'));
+                    });
+                }
+                
+                // Check Content-Length - VRM files should be at least 100KB (100,000 bytes)
+                if (contentLength && parseInt(contentLength) < 100000) {
+                    console.warn(`Warning: Content-Length is suspiciously small (${contentLength} bytes). VRM files are typically > 1MB.`);
+                    // Still try to load, but check the actual data
+                }
+                
+                // Fetch as ArrayBuffer
+                return response.arrayBuffer();
+            })
+            .then(arrayBuffer => {
+                if (!arrayBuffer) {
+                    return; // Error already handled
+                }
+                
+                const actualSize = arrayBuffer.byteLength;
+                console.log(`File loaded successfully. Actual size: ${(actualSize / 1024 / 1024).toFixed(2)} MB`);
+                
+                // Check if the file is suspiciously small (likely HTML error page)
+                if (actualSize < 100000) {
+                    // Try to detect if it's HTML
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const textDecoder = new TextDecoder();
+                    const firstBytes = textDecoder.decode(uint8Array.slice(0, 200));
+                    
+                    if (firstBytes.includes('<html') || firstBytes.includes('<!DOCTYPE') || firstBytes.includes('version ht')) {
+                        console.error(`Server returned HTML/error page instead of VRM file. Size: ${actualSize} bytes`);
+                        console.error(`Content (first 500 chars): ${firstBytes.substring(0, 500)}`);
+                        onError(new Error(`VRM file appears to be an error page (${actualSize} bytes). File may not be properly deployed on Vercel.`));
+                        return;
+                    }
+                }
+                
+                // File looks valid, parse it
+                console.log(`Parsing VRM file...`);
+                try {
+                    loader.parse(arrayBuffer, url, onLoad, onError);
+                } catch (parseError) {
+                    console.error("Parse error:", parseError);
+                    onError(parseError);
+                }
+            })
+            .catch(fetchError => {
+                console.error("Failed to fetch file:", fetchError);
+                onError(fetchError);
+            });
     }
 }
 
