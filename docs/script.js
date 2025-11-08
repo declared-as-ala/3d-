@@ -686,14 +686,22 @@ function stopTracking() {
     console.log("Tracking stopped");
 }
 
-// Setup tracking toggle button
-const trackingToggleButton = document.getElementById("tracking-toggle");
-if (trackingToggleButton) {
-    trackingToggleButton.addEventListener("click", () => {
-        if (isTrackingEnabled) {
-            stopTracking();
-        } else {
-            startTracking();
-        }
-    });
+// Setup tracking toggle button (wait for DOM to be ready)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTrackingButton);
+} else {
+    setupTrackingButton();
+}
+
+function setupTrackingButton() {
+    const trackingToggleButton = document.getElementById("tracking-toggle");
+    if (trackingToggleButton) {
+        trackingToggleButton.addEventListener("click", () => {
+            if (isTrackingEnabled) {
+                stopTracking();
+            } else {
+                startTracking();
+            }
+        });
+    }
 }
